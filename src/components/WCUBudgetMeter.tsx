@@ -41,15 +41,15 @@ export const WCUBudgetMeter: React.FC<WCUBudgetMeterProps> = ({ rules, showDetai
   return (
     <TooltipProvider>
       <div className="space-y-2">
-        <div className="flex items-center justify-between text-sm">
-          <div className="flex items-center gap-2">
-            <Zap className="w-4 h-4 text-yellow-400" />
-            <span className="font-medium">WCU Budget</span>
+        <div className="flex items-center justify-between text-xs">
+          <div className="flex items-center gap-1.5">
+            <Zap className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
+            <span className="font-medium">WCU</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {getStatusIcon()}
             <span
-              className={`font-mono ${
+              className={`font-mono text-xs ${
                 status.status === "exceeded"
                   ? "text-red-400"
                   : status.status === "warning"
@@ -57,7 +57,7 @@ export const WCUBudgetMeter: React.FC<WCUBudgetMeterProps> = ({ rules, showDetai
                   : "text-green-400"
               }`}
             >
-              {total} / {MAX_WCU}
+              {total}/{MAX_WCU}
             </span>
           </div>
         </div>

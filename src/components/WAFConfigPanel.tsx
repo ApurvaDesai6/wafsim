@@ -334,21 +334,18 @@ export const WAFConfigPanel: React.FC<WAFConfigPanelProps> = ({ wafId, onEditRul
                     onDragOver={(e) => handleDragOver(e, rule.name)}
                     onDragEnd={handleDragEnd}
                   >
-                    <AccordionTrigger className="px-3 py-2 hover:no-underline">
-                      <div className="flex items-center gap-2 flex-1">
-                        <GripVertical className="w-4 h-4 text-gray-500 cursor-grab" />
-                        <Badge variant="outline" className="text-xs">
+                    <AccordionTrigger className="px-3 py-2 hover:no-underline [&>svg]:shrink-0">
+                      <div className="flex items-center gap-1.5 flex-1 min-w-0 mr-2">
+                        <GripVertical className="w-3 h-3 text-gray-500 cursor-grab shrink-0" />
+                        <Badge variant="outline" className="text-[10px] px-1 shrink-0">
                           {rule.priority}
                         </Badge>
-                        <span className="font-medium">{rule.name}</span>
-                        <Badge className={`${getActionColor(rule.action)} text-white text-xs`}>
+                        <span className="font-medium text-xs truncate">{rule.name}</span>
+                        <Badge className={`${getActionColor(rule.action)} text-white text-[10px] px-1 shrink-0`}>
                           {rule.action}
                         </Badge>
-                        <Badge variant="secondary" className="text-xs">
-                          {getRuleTypeLabel(rule.statement)}
-                        </Badge>
-                        <span className="text-xs text-gray-400 ml-auto">
-                          {wcuCost.total} WCU
+                        <span className="text-[10px] text-gray-500 shrink-0 ml-auto">
+                          {wcuCost.total}WCU
                         </span>
                       </div>
                     </AccordionTrigger>
@@ -436,46 +433,58 @@ export const WAFConfigPanel: React.FC<WAFConfigPanelProps> = ({ wafId, onEditRul
         </div>
       </div>
 
-      {/* Managed Rule Groups Quick Add */}
-      <div className="p-4 border-t border-gray-700">
-        <h4 className="text-sm font-semibold mb-2 text-gray-400">Quick Add Managed Rules</h4>
-        <div className="flex flex-wrap gap-2">
-          {[
-            { name: "AWSManagedRulesCommonRuleSet", label: "Common" },
-            { name: "AWSManagedRulesSQLiRuleSet", label: "SQLi" },
-            { name: "AWSManagedRulesKnownBadInputsRuleSet", label: "Bad Inputs" },
-            { name: "AWSManagedRulesLinuxRuleSet", label: "Linux" },
-            { name: "AWSManagedRulesUnixRuleSet", label: "Unix" },
-          ].map((ruleSet) => (
-            <Button
-              key={ruleSet.name}
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                const newRule: Rule = {
-                  name: ruleSet.label,
-                  priority: waf.rules.length + 1,
-                  statement: {
-                    type: "ManagedRuleGroupStatement",
-                    vendorName: "AWS",
-                    name: ruleSet.name,
-                  } as Statement,
-                  action: "BLOCK",
-                  overrideAction: "NONE" as OverrideAction,
-                  visibilityConfig: {
-                    sampledRequestsEnabled: true,
-                    cloudWatchMetricsEnabled: true,
-                    metricName: ruleSet.name.replace(/[^a-zA-Z0-9]/g, ""),
-                  },
-                };
-                addRuleToWAF(wafId, newRule);
-              }}
-              className="text-xs border-gray-600"
-            >
-              + {ruleSet.label}
-            </Button>
-          ))}
-        </div>
+      {/* Managed Rule Groups */}
+      <div className="border-t border-gray-700 shrink-0">
+        <details className="group">
+          <summary className="px-4 py-2 cursor-pointer text-xs font-semibold text-gray-400 hover:text-gray-200 select-none flex items-center gap-1">
+            <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" />
+            AWS Managed Rule Groups
+          </summary>
+          <div className="px-4 pb-3 space-y-1 max-h-[250px] overflow-y-auto">
+            {[
+              { name: "AWSManagedRulesCommonRuleSet", label: "Core Rule Set", wcu: 700, desc: "OWASP Top 10, bad bots, size limits" },
+              { name: "AWSManagedRulesKnownBadInputsRuleSet", label: "Known Bad Inputs", wcu: 200, desc: "Log4j, SSRF, Java deserialization" },
+              { name: "AWSManagedRulesSQLiRuleSet", label: "SQL Injection", wcu: 200, desc: "SQL injection patterns" },
+              { name: "AWSManagedRulesLinuxRuleSet", label: "Linux OS", wcu: 200, desc: "Linux-specific LFI attacks" },
+              { name: "AWSManagedRulesUnixRuleSet", label: "POSIX OS", wcu: 100, desc: "POSIX/Unix LFI attacks" },
+              { name: "AWSManagedRulesWindowsRuleSet", label: "Windows OS", wcu: 200, desc: "PowerShell, Windows-specific" },
+              { name: "AWSManagedRulesPHPRuleSet", label: "PHP Application", wcu: 100, desc: "PHP injection, unsafe functions" },
+              { name: "AWSManagedRulesWordPressRuleSet", label: "WordPress", wcu: 100, desc: "WordPress-specific exploits" },
+              { name: "AWSManagedRulesAdminProtectionRuleSet", label: "Admin Protection", wcu: 100, desc: "Admin page access control" },
+              { name: "AWSManagedRulesAmazonIpReputationList", label: "IP Reputation", wcu: 25, desc: "Known malicious IPs" },
+              { name: "AWSManagedRulesAnonymousIpList", label: "Anonymous IP", wcu: 50, desc: "VPN, Tor, proxies, hosting" },
+              { name: "AWSManagedRulesBotControlRuleSet", label: "Bot Control", wcu: 50, desc: "Bot detection & management" },
+              { name: "AWSManagedRulesATPRuleSet", label: "Account Takeover", wcu: 50, desc: "Credential stuffing, brute force" },
+              { name: "AWSManagedRulesACFPRuleSet", label: "Fraud Prevention", wcu: 50, desc: "Account creation fraud" },
+            ].map((rg) => {
+              const alreadyAdded = waf.rules.some(r => r.statement.type === "ManagedRuleGroupStatement" && (r.statement as { name?: string }).name === rg.name);
+              return (
+                <button
+                  key={rg.name}
+                  disabled={alreadyAdded}
+                  onClick={() => {
+                    addRuleToWAF(wafId, {
+                      name: rg.label.replace(/\s+/g, ""),
+                      priority: waf.rules.length + 1,
+                      statement: { type: "ManagedRuleGroupStatement", vendorName: "AWS", name: rg.name } as Statement,
+                      action: "BLOCK",
+                      overrideAction: "NONE" as OverrideAction,
+                      visibilityConfig: { sampledRequestsEnabled: true, cloudWatchMetricsEnabled: true, metricName: rg.name },
+                    });
+                  }}
+                  className={`w-full text-left px-2 py-1.5 rounded text-[11px] flex items-center gap-2 transition-colors ${alreadyAdded ? "opacity-40 cursor-not-allowed" : "hover:bg-gray-800 cursor-pointer"}`}
+                >
+                  <Plus className="w-3 h-3 shrink-0 text-gray-500" />
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium truncate">{rg.label}</div>
+                    <div className="text-[10px] text-gray-500 truncate">{rg.desc}</div>
+                  </div>
+                  <span className="text-[10px] text-gray-600 shrink-0">{rg.wcu}</span>
+                </button>
+              );
+            })}
+          </div>
+        </details>
       </div>
     </div>
   );

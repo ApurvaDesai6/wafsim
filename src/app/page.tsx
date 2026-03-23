@@ -148,7 +148,7 @@ export default function WAFSimPage() {
       <header className="h-11 border-b border-gray-800 flex items-center justify-between px-4 bg-gray-900 shrink-0">
         <div className="flex items-center gap-2">
           <Shield className="w-5 h-5 text-red-500" />
-          <span className="text-base font-bold">WAFSim</span>
+          <span className="text-base font-bold">AWS WAFSim</span>
           <Badge variant="outline" className="text-[10px] bg-gray-800 ml-1">v2</Badge>
         </div>
         <div className="flex items-center gap-1">

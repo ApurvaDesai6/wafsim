@@ -14,16 +14,16 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "WAFSim - AWS WAF Testing Dashboard",
-  description: "Visual AWS WAF testing and rule configuration dashboard. Build, test, and validate WAF rules before deploying to production.",
+  title: "AWS WAFSim - Rule Testing & Validation",
+  description: "Interactive AWS WAF rule simulator. Build, test, and validate WebACL configurations against real attack patterns before deploying to production.",
   keywords: ["AWS WAF", "Web Application Firewall", "Security", "Rule Testing", "Cloud Security"],
-  authors: [{ name: "WAFSim Team" }],
+  authors: [{ name: "Apurva Desai" }],
   icons: {
-    icon: "/logo.svg",
+    icon: "/favicon.svg",
   },
   openGraph: {
-    title: "WAFSim - AWS WAF Testing Dashboard",
-    description: "Visual AWS WAF testing and rule configuration dashboard",
+    title: "AWS WAFSim - Rule Testing & Validation",
+    description: "Interactive AWS WAF rule simulator for testing WebACL configurations",
     type: "website",
   },
 };
