@@ -381,13 +381,31 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
   // Handle new connections
   const onConnect = useCallback(
     (params: Connection) => {
-      addEdge({
-        source: params.source!,
-        target: params.target!,
-      });
-      toast.success("Connection created!");
+      const sourceNode = storeNodes.find(n => n.id === params.source);
+      const targetNode = storeNodes.find(n => n.id === params.target);
+
+      // WAF node connecting to a resource: associate WAF with that resource
+      if (sourceNode?.type === "WAF" && targetNode?.wafAttachable && sourceNode.wafId) {
+        // Find the incoming edge to the target resource and attach the WAF
+        const targetEdge = storeEdges.find(e => e.target === params.target && !e.wafId);
+        if (targetEdge) {
+          // Associate WAF with the edge
+          const waf = wafs.find(w => w.id === sourceNode.wafId);
+          if (waf) {
+            // Update edge to reference this WAF
+            const { setEdges: setStoreEdges } = useWAFSimStore.getState();
+            setStoreEdges(storeEdges.map(e => e.id === targetEdge.id ? { ...e, wafId: waf.id } : e));
+          }
+        }
+        // Also create the visual connection
+        addEdge({ source: params.source!, target: params.target! });
+        toast.success(`WAF protecting ${targetNode.label}`);
+      } else {
+        addEdge({ source: params.source!, target: params.target! });
+        toast.success("Connection created!");
+      }
     },
-    [addEdge]
+    [addEdge, storeNodes, storeEdges, wafs]
   );
 
   // Handle node click
@@ -586,16 +604,17 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
         </div>
       </div>
 
-      {/* Instructions - collapsible, top right */}
+      {/* Instructions - open by default, collapsible */}
       <div className="absolute top-4 right-4 z-10">
-        <details className="bg-gray-900/90 rounded-lg shadow-xl border border-gray-700 backdrop-blur-sm text-xs max-w-[180px]">
+        <details open className="bg-gray-900/90 rounded-lg shadow-xl border border-gray-700 backdrop-blur-sm text-xs max-w-[200px]">
           <summary className="px-3 py-1.5 cursor-pointer text-gray-400 hover:text-gray-200 font-medium select-none">💡 Quick Tips</summary>
           <ul className="px-3 pb-2 text-gray-500 space-y-0.5">
             <li>• Drag resources onto canvas</li>
-            <li>• Connect via handle dots</li>
-            <li>• Click green-border nodes to attach WAF</li>
-            <li>• Click WAF edges to configure</li>
-            <li>• Delete key removes selection</li>
+            <li>• Drag a <b className="text-red-400">WAF WebACL</b> from the palette</li>
+            <li>• Connect WAF to any green-border resource</li>
+            <li>• One WAF can protect multiple resources</li>
+            <li>• Click a WAF node to configure rules</li>
+            <li>• Use the bottom bar to simulate traffic</li>
           </ul>
         </details>
       </div>
