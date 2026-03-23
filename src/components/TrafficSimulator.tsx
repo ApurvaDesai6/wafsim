@@ -186,6 +186,7 @@ export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate }
   const [isGenerating, setIsGenerating] = useState(false);
   const [floodRate, setFloodRate] = useState(100);
   const [floodDuration, setFloodDuration] = useState(1);
+  const [batchResults, setBatchResults] = useState<Array<{name: string; category: string; action: string}> | null>(null);
 
   // Find active WAF
   const activeWAF = wafs.length > 0 ? wafs[0] : null;
@@ -195,16 +196,39 @@ export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate }
 
     setIsSimulating(true);
 
-    // Run evaluation
     const result = evaluateWebACL(currentRequest, activeWAF, {
       ipSets,
       regexPatternSets,
     });
 
-    // Store result with WAF ID for visual feedback
     setEvaluationResultWithWAF(result, activeWAF.id);
     setIsSimulating(false);
     onSimulate?.(currentRequest);
+  };
+
+  const handleBatchTest = () => {
+    if (!activeWAF) return;
+    setIsSimulating(true);
+
+    const results = ATTACK_PRESETS.map((preset) => {
+      const req: HttpRequest = {
+        protocol: preset.request.protocol || "HTTP/1.1",
+        method: preset.request.method || "GET",
+        uri: preset.request.uri || "/",
+        queryParams: preset.request.queryParams || {},
+        headers: preset.request.headers || [{ name: "Host", value: "example.com" }],
+        body: preset.request.body || "",
+        bodyEncoding: preset.request.bodyEncoding || "none",
+        contentType: preset.request.contentType || "application/json",
+        sourceIP: preset.request.sourceIP || "192.168.1.100",
+        country: preset.request.country || "US",
+      };
+      const result = evaluateWebACL(req, activeWAF, { ipSets, regexPatternSets });
+      return { name: preset.name, category: preset.category, action: result.finalAction };
+    });
+
+    setBatchResults(results);
+    setIsSimulating(false);
   };
 
   const handlePresetSelect = (preset: AttackPreset) => {
@@ -473,7 +497,7 @@ export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate }
         </TabsContent>
 
         {/* Flood Test Tab */}
-        <TabsContent value="flood" className="flex-1 p-4 space-y-4">
+        <TabsContent value="flood" className="flex-1 overflow-y-auto p-4 space-y-4">
           <Card className="bg-gray-800 border-gray-700">
             <CardHeader>
               <CardTitle className="text-sm flex items-center gap-2">
@@ -507,6 +531,51 @@ export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate }
               <div className="text-sm text-gray-400">
                 Total requests: {floodRate * floodDuration}
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Batch Test */}
+          <Card className="bg-gray-800 border-gray-700">
+            <CardHeader>
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Zap className="w-4 h-4" />
+                Batch Attack Test
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-gray-400">Run all {ATTACK_PRESETS.length} attack presets against your WAF and see which get blocked.</p>
+              <Button onClick={handleBatchTest} disabled={!activeWAF || isSimulating} className="w-full bg-purple-600 hover:bg-purple-700" size="sm">
+                <Play className="w-4 h-4 mr-2" />
+                Run All Presets
+              </Button>
+              {batchResults && (
+                <div className="space-y-1 mt-2">
+                  <div className="flex justify-between text-xs text-gray-400 font-semibold px-1">
+                    <span>Attack</span>
+                    <span>Result</span>
+                  </div>
+                  {batchResults.map((r, i) => (
+                    <div key={i} className="flex items-center justify-between px-2 py-1.5 rounded bg-gray-900 text-xs">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-[10px] px-1">{r.category}</Badge>
+                        <span>{r.name}</span>
+                      </div>
+                      <Badge className={
+                        r.action === "BLOCK" ? "bg-red-600" :
+                        r.action === "COUNT" ? "bg-yellow-600" :
+                        "bg-green-600"
+                      }>
+                        {r.action}
+                      </Badge>
+                    </div>
+                  ))}
+                  <div className="flex gap-3 mt-2 text-xs font-medium">
+                    <span className="text-red-400">Blocked: {batchResults.filter(r => r.action === "BLOCK").length}</span>
+                    <span className="text-green-400">Allowed: {batchResults.filter(r => r.action === "ALLOW").length}</span>
+                    <span className="text-yellow-400">Counted: {batchResults.filter(r => r.action === "COUNT").length}</span>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

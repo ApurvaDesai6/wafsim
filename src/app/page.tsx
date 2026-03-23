@@ -221,7 +221,7 @@ export default function WAFSimPage() {
   }, [evaluationResult, activeTab]);
 
   return (
-    <div className="h-screen flex flex-col bg-gray-950 text-white overflow-hidden">
+    <div className="h-screen flex flex-col bg-gray-950 text-white overflow-hidden select-none">
       {/* Header */}
       <header className="h-14 border-b border-gray-800 flex items-center justify-between px-4 bg-gray-900 shrink-0">
         <div className="flex items-center gap-3">

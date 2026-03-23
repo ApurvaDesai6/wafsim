@@ -322,19 +322,32 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
 
   // Convert store edges to React Flow edges
   const reactFlowEdges: Edge[] = useMemo(() => {
-    return storeEdges.map((edge) => ({
-      id: edge.id,
-      source: edge.source,
-      target: edge.target,
-      type: "smoothstep",
-      animated: false,
-      style: {
-        strokeWidth: selectedEdgeId === edge.id ? 3 : 2,
-        stroke: edge.wafId ? "#ef4444" : selectedEdgeId === edge.id ? "#fbbf24" : "#6b7280",
-      },
-      markerEnd: { type: MarkerType.ArrowClosed, color: edge.wafId ? "#ef4444" : "#6b7280" },
-    }));
-  }, [storeEdges, selectedEdgeId]);
+    return storeEdges.map((edge) => {
+      const isEvaluating = evaluationStatus && edge.wafId === evaluatedWAFId;
+      return {
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        type: "smoothstep",
+        animated: !!isEvaluating,
+        style: {
+          strokeWidth: selectedEdgeId === edge.id ? 3 : 2,
+          stroke: isEvaluating
+            ? evaluationStatus === 'blocked' ? '#ef4444' : evaluationStatus === 'allowed' ? '#22c55e' : '#eab308'
+            : edge.wafId ? "#ef4444" : selectedEdgeId === edge.id ? "#fbbf24" : "#6b7280",
+        },
+        markerEnd: { type: MarkerType.ArrowClosed, color: edge.wafId ? "#ef4444" : "#6b7280" },
+        label: edge.wafId && isEvaluating ? evaluationStatus?.toUpperCase() : undefined,
+        labelStyle: { fill: '#fff', fontWeight: 700, fontSize: 10 },
+        labelBgStyle: { 
+          fill: evaluationStatus === 'blocked' ? '#dc2626' : evaluationStatus === 'allowed' ? '#16a34a' : '#ca8a04',
+          fillOpacity: 0.9,
+        },
+        labelBgPadding: [4, 2] as [number, number],
+        labelBgBorderRadius: 4,
+      };
+    });
+  }, [storeEdges, selectedEdgeId, evaluationStatus, evaluatedWAFId]);
 
   const [nodes, setLocalNodes, onNodesChange] = useNodesState(reactFlowNodes);
   const [edges, setLocalEdges, onEdgesChange] = useEdgesState(reactFlowEdges);
