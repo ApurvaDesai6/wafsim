@@ -259,6 +259,7 @@ interface TopologyCanvasInnerProps {
   onWAFClick?: (wafId: string) => void;
   evaluationStatus?: 'blocked' | 'allowed' | 'counted' | null;
   evaluatedWAFId?: string | null;
+  isAnimating?: boolean;
 }
 
 const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
@@ -267,6 +268,7 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
   onWAFClick,
   evaluationStatus,
   evaluatedWAFId,
+  isAnimating,
 }) => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition } = useReactFlow();
@@ -323,23 +325,30 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
   // Convert store edges to React Flow edges
   const reactFlowEdges: Edge[] = useMemo(() => {
     return storeEdges.map((edge) => {
-      const isEvaluating = evaluationStatus && edge.wafId === evaluatedWAFId;
+      const isWAFEdge = !!edge.wafId;
+      const isEvalEdge = evaluationStatus && edge.wafId === evaluatedWAFId;
+      // Animate all edges during traffic flow, color the WAF edge based on result
+      const showTraffic = isAnimating;
+      
+      let strokeColor = edge.wafId ? "#ef4444" : selectedEdgeId === edge.id ? "#fbbf24" : "#4b5563";
+      if (isEvalEdge) {
+        strokeColor = evaluationStatus === 'blocked' ? '#ef4444' : evaluationStatus === 'allowed' ? '#22c55e' : '#eab308';
+      }
+
       return {
         id: edge.id,
         source: edge.source,
         target: edge.target,
         type: "smoothstep",
-        animated: !!isEvaluating,
+        animated: showTraffic || !!isEvalEdge,
         style: {
-          strokeWidth: selectedEdgeId === edge.id ? 3 : 2,
-          stroke: isEvaluating
-            ? evaluationStatus === 'blocked' ? '#ef4444' : evaluationStatus === 'allowed' ? '#22c55e' : '#eab308'
-            : edge.wafId ? "#ef4444" : selectedEdgeId === edge.id ? "#fbbf24" : "#6b7280",
+          strokeWidth: isEvalEdge ? 3 : 2,
+          stroke: strokeColor,
         },
-        markerEnd: { type: MarkerType.ArrowClosed, color: edge.wafId ? "#ef4444" : "#6b7280" },
-        label: edge.wafId && isEvaluating ? evaluationStatus?.toUpperCase() : undefined,
+        markerEnd: { type: MarkerType.ArrowClosed, color: strokeColor },
+        label: isEvalEdge ? evaluationStatus?.toUpperCase() : undefined,
         labelStyle: { fill: '#fff', fontWeight: 700, fontSize: 10 },
-        labelBgStyle: { 
+        labelBgStyle: {
           fill: evaluationStatus === 'blocked' ? '#dc2626' : evaluationStatus === 'allowed' ? '#16a34a' : '#ca8a04',
           fillOpacity: 0.9,
         },
@@ -347,7 +356,7 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
         labelBgBorderRadius: 4,
       };
     });
-  }, [storeEdges, selectedEdgeId, evaluationStatus, evaluatedWAFId]);
+  }, [storeEdges, selectedEdgeId, evaluationStatus, evaluatedWAFId, isAnimating]);
 
   const [nodes, setLocalNodes, onNodesChange] = useNodesState(reactFlowNodes);
   const [edges, setLocalEdges, onEdgesChange] = useEdgesState(reactFlowEdges);
@@ -577,16 +586,18 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
         </div>
       </div>
 
-      {/* Instructions Panel */}
-      <div className="absolute bottom-4 left-4 bg-gray-900/95 rounded-lg shadow-xl p-3 border border-gray-700 backdrop-blur-sm text-xs max-w-[200px]">
-        <div className="font-semibold text-gray-300 mb-1">Quick Tips</div>
-        <ul className="text-gray-400 space-y-0.5">
-          <li>• Drag resources onto canvas</li>
-          <li>• Connect nodes by dragging handles</li>
-          <li>• Double-click nodes for options</li>
-          <li>• Click edges to attach WAF</li>
-          <li>• Press Delete to remove selection</li>
-        </ul>
+      {/* Instructions - collapsible, top right */}
+      <div className="absolute top-4 right-4 z-10">
+        <details className="bg-gray-900/90 rounded-lg shadow-xl border border-gray-700 backdrop-blur-sm text-xs max-w-[180px]">
+          <summary className="px-3 py-1.5 cursor-pointer text-gray-400 hover:text-gray-200 font-medium select-none">💡 Quick Tips</summary>
+          <ul className="px-3 pb-2 text-gray-500 space-y-0.5">
+            <li>• Drag resources onto canvas</li>
+            <li>• Connect via handle dots</li>
+            <li>• Click green-border nodes to attach WAF</li>
+            <li>• Click WAF edges to configure</li>
+            <li>• Delete key removes selection</li>
+          </ul>
+        </details>
       </div>
 
       {/* Node Configuration Dialog */}
@@ -633,6 +644,7 @@ interface TopologyCanvasProps {
   onWAFClick?: (wafId: string) => void;
   evaluationStatus?: 'blocked' | 'allowed' | 'counted' | null;
   evaluatedWAFId?: string | null;
+  isAnimating?: boolean;
 }
 
 export const TopologyCanvas: React.FC<TopologyCanvasProps> = (props) => {
