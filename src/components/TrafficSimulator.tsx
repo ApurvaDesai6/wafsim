@@ -248,6 +248,7 @@ export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate }
       country: preset.request.country || "US",
     };
     setCurrentRequest(newRequest);
+    setActiveTab("form"); // Auto-switch to form to show what changed
   };
 
   const handleNLGenerate = async () => {
@@ -296,45 +297,33 @@ export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate }
   };
 
   return (
-    <div className="h-full flex flex-col bg-gray-900 text-white">
-      {/* Header */}
-      <div className="p-4 border-b border-gray-700">
-        <h2 className="text-lg font-semibold flex items-center gap-2">
-          <Send className="w-5 h-5" />
-          Traffic Simulator
-        </h2>
+    <div className="h-full flex bg-gray-900 text-white overflow-hidden">
+      {/* Tabs as vertical sidebar */}
+      <div className="w-24 border-r border-gray-700 flex flex-col shrink-0">
+        <button onClick={() => setActiveTab("form")} className={`px-2 py-2.5 text-[11px] text-left border-b border-gray-700 ${activeTab === "form" ? "bg-gray-800 text-white" : "text-gray-400 hover:bg-gray-800/50"}`}>
+          📝 Form
+        </button>
+        <button onClick={() => setActiveTab("presets")} className={`px-2 py-2.5 text-[11px] text-left border-b border-gray-700 ${activeTab === "presets" ? "bg-gray-800 text-white" : "text-gray-400 hover:bg-gray-800/50"}`}>
+          ⚡ Presets
+        </button>
+        <button onClick={() => setActiveTab("flood")} className={`px-2 py-2.5 text-[11px] text-left border-b border-gray-700 ${activeTab === "flood" ? "bg-gray-800 text-white" : "text-gray-400 hover:bg-gray-800/50"}`}>
+          🌊 Batch
+        </button>
       </div>
 
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-        <TabsList className="mx-4 mt-2 bg-gray-800">
-          <TabsTrigger value="form" className="data-[state=active]:bg-gray-700">
-            Form
-          </TabsTrigger>
-          <TabsTrigger value="presets" className="data-[state=active]:bg-gray-700">
-            Presets
-          </TabsTrigger>
-          <TabsTrigger value="nl" className="data-[state=active]:bg-gray-700">
-            Natural Language
-          </TabsTrigger>
-          <TabsTrigger value="flood" className="data-[state=active]:bg-gray-700">
-            Flood Test
-          </TabsTrigger>
-        </TabsList>
-
-        {/* Form Tab */}
-        <TabsContent value="form" className="flex-1 overflow-y-auto p-4 space-y-4">
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-3">
           {/* Protocol & Method */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label className="text-sm text-gray-400">Protocol</Label>
+              <Label className="text-xs text-gray-400">Protocol</Label>
               <Select
                 value={currentRequest.protocol}
                 onValueChange={(value: HTTPProtocol) =>
                   setCurrentRequest({ ...currentRequest, protocol: value })
                 }
               >
-                <SelectTrigger className="bg-gray-800 border-gray-700">
+                <SelectTrigger className="bg-gray-800 border-gray-700 h-8 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -346,14 +335,14 @@ export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate }
               </Select>
             </div>
             <div>
-              <Label className="text-sm text-gray-400">Method</Label>
+              <Label className="text-xs text-gray-400">Method</Label>
               <Select
                 value={currentRequest.method}
                 onValueChange={(value: HTTPMethod) =>
                   setCurrentRequest({ ...currentRequest, method: value })
                 }
               >
-                <SelectTrigger className="bg-gray-800 border-gray-700">
+                <SelectTrigger className="bg-gray-800 border-gray-700 h-8 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -371,19 +360,19 @@ export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate }
 
           {/* URI */}
           <div>
-            <Label className="text-sm text-gray-400">URI</Label>
+            <Label className="text-xs text-gray-400">URI</Label>
             <Input
               value={currentRequest.uri}
               onChange={(e) => setCurrentRequest({ ...currentRequest, uri: e.target.value })}
               placeholder="/api/endpoint"
-              className="bg-gray-800 border-gray-700"
+              className="bg-gray-800 border-gray-700 h-8 text-xs"
             />
           </div>
 
           {/* Headers */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <Label className="text-sm text-gray-400">Headers</Label>
+              <Label className="text-xs text-gray-400">Headers</Label>
               <Button size="sm" variant="outline" onClick={addHeader} className="h-7 text-xs">
                 <Plus className="w-3 h-3 mr-1" />
                 Add
@@ -419,191 +408,67 @@ export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate }
 
           {/* Body */}
           <div>
-            <Label className="text-sm text-gray-400">Request Body</Label>
+            <Label className="text-xs text-gray-400">Request Body</Label>
             <Textarea
               value={currentRequest.body}
               onChange={(e) => setCurrentRequest({ ...currentRequest, body: e.target.value })}
               placeholder='{"key": "value"}'
-              className="bg-gray-800 border-gray-700 min-h-[100px] font-mono text-sm"
+              className="bg-gray-800 border-gray-700 min-h-[60px] text-xs font-mono text-sm"
             />
           </div>
 
           {/* Network */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label className="text-sm text-gray-400">Source IP</Label>
+              <Label className="text-xs text-gray-400">Source IP</Label>
               <Input
                 value={currentRequest.sourceIP}
                 onChange={(e) => setCurrentRequest({ ...currentRequest, sourceIP: e.target.value })}
                 placeholder="192.168.1.100"
-                className="bg-gray-800 border-gray-700"
+                className="bg-gray-800 border-gray-700 h-8 text-xs"
               />
             </div>
             <div>
-              <Label className="text-sm text-gray-400">Country</Label>
+              <Label className="text-xs text-gray-400">Country</Label>
               <Input
                 value={currentRequest.country}
                 onChange={(e) => setCurrentRequest({ ...currentRequest, country: e.target.value })}
                 placeholder="US"
                 maxLength={2}
-                className="bg-gray-800 border-gray-700 uppercase"
+                className="bg-gray-800 border-gray-700 uppercase h-8 text-xs"
               />
             </div>
           </div>
-        </TabsContent>
-
-        {/* Presets Tab */}
-        <TabsContent value="presets" className="flex-1 overflow-y-auto p-4">
+        {activeTab === "presets" && (
           <QuickLoadPresets presets={ATTACK_PRESETS} onSelect={handlePresetSelect} />
-        </TabsContent>
-
-        {/* Natural Language Tab */}
-        <TabsContent value="nl" className="flex-1 p-4 space-y-4">
-          <div>
-            <Label className="text-sm text-gray-400">Describe the traffic to simulate</Label>
-            <Textarea
-              value={nlPrompt}
-              onChange={(e) => setNlPrompt(e.target.value)}
-              placeholder="e.g., 'A SQL injection attempt from Russia targeting the login endpoint'"
-              className="bg-gray-800 border-gray-700 min-h-[120px]"
-            />
-          </div>
-          <Button
-            onClick={handleNLGenerate}
-            disabled={isGenerating || !nlPrompt.trim()}
-            className="w-full bg-purple-600 hover:bg-purple-700"
-          >
-            {isGenerating ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Generating...
-              </>
-            ) : (
-              <>
-                <Zap className="w-4 h-4 mr-2" />
-                Generate Request
-              </>
-            )}
-          </Button>
-          <div className="text-xs text-gray-500">
-            <p className="font-medium mb-1">Examples:</p>
-            <ul className="list-disc list-inside space-y-1">
-              <li>"A SQL injection attempt from Russia targeting the login endpoint"</li>
-              <li>"A flood of 500 GET requests per minute from a Chinese IP"</li>
-              <li>"XSS attack via the comment form"</li>
-              <li>"Access attempt to admin panel from Tor exit node"</li>
-            </ul>
-          </div>
-        </TabsContent>
-
-        {/* Flood Test Tab */}
-        <TabsContent value="flood" className="flex-1 overflow-y-auto p-4 space-y-4">
-          <Card className="bg-gray-800 border-gray-700">
-            <CardHeader>
-              <CardTitle className="text-sm flex items-center gap-2">
-                <Globe className="w-4 h-4" />
-                Rate-Based Flood Simulation
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-sm text-gray-400">Requests/Minute</Label>
-                  <Input
-                    type="number"
-                    value={floodRate}
-                    onChange={(e) => setFloodRate(parseInt(e.target.value) || 100)}
-                    className="bg-gray-700 border-gray-600"
-                  />
-                </div>
-                <div>
-                  <Label className="text-sm text-gray-400">Duration (min)</Label>
-                  <Input
-                    type="number"
-                    value={floodDuration}
-                    onChange={(e) => setFloodDuration(parseInt(e.target.value) || 1)}
-                    min={1}
-                    max={10}
-                    className="bg-gray-700 border-gray-600"
-                  />
-                </div>
-              </div>
-              <div className="text-sm text-gray-400">
-                Total requests: {floodRate * floodDuration}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Batch Test */}
-          <Card className="bg-gray-800 border-gray-700">
-            <CardHeader>
-              <CardTitle className="text-sm flex items-center gap-2">
-                <Zap className="w-4 h-4" />
-                Batch Attack Test
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-xs text-gray-400">Run all {ATTACK_PRESETS.length} attack presets against your WAF and see which get blocked.</p>
-              <Button onClick={handleBatchTest} disabled={!activeWAF || isSimulating} className="w-full bg-purple-600 hover:bg-purple-700" size="sm">
-                <Play className="w-4 h-4 mr-2" />
-                Run All Presets
-              </Button>
-              {batchResults && (
-                <div className="space-y-1 mt-2">
-                  <div className="flex justify-between text-xs text-gray-400 font-semibold px-1">
-                    <span>Attack</span>
-                    <span>Result</span>
-                  </div>
-                  {batchResults.map((r, i) => (
-                    <div key={i} className="flex items-center justify-between px-2 py-1.5 rounded bg-gray-900 text-xs">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-[10px] px-1">{r.category}</Badge>
-                        <span>{r.name}</span>
-                      </div>
-                      <Badge className={
-                        r.action === "BLOCK" ? "bg-red-600" :
-                        r.action === "COUNT" ? "bg-yellow-600" :
-                        "bg-green-600"
-                      }>
-                        {r.action}
-                      </Badge>
+        )}
+        {activeTab === "flood" && (
+          <div className="space-y-3">
+            <p className="text-xs text-gray-400">Run all {ATTACK_PRESETS.length} attack presets against your WAF.</p>
+            <Button onClick={handleBatchTest} disabled={!activeWAF || isSimulating} className="w-full bg-purple-600 hover:bg-purple-700" size="sm">
+              <Play className="w-4 h-4 mr-2" />Run All Presets
+            </Button>
+            {batchResults && (
+              <div className="space-y-1">
+                {batchResults.map((r, i) => (
+                  <div key={i} className="flex items-center justify-between px-2 py-1 rounded bg-gray-800 text-xs">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-[10px] px-1">{r.category}</Badge>
+                      <span>{r.name}</span>
                     </div>
-                  ))}
-                  <div className="flex gap-3 mt-2 text-xs font-medium">
-                    <span className="text-red-400">Blocked: {batchResults.filter(r => r.action === "BLOCK").length}</span>
-                    <span className="text-green-400">Allowed: {batchResults.filter(r => r.action === "ALLOW").length}</span>
-                    <span className="text-yellow-400">Counted: {batchResults.filter(r => r.action === "COUNT").length}</span>
+                    <Badge className={r.action === "BLOCK" ? "bg-red-600" : r.action === "COUNT" ? "bg-yellow-600" : "bg-green-600"}>
+                      {r.action}
+                    </Badge>
                   </div>
+                ))}
+                <div className="flex gap-3 text-xs font-medium pt-1">
+                  <span className="text-red-400">Blocked: {batchResults.filter(r => r.action === "BLOCK").length}</span>
+                  <span className="text-green-400">Allowed: {batchResults.filter(r => r.action === "ALLOW").length}</span>
+                  <span className="text-yellow-400">Counted: {batchResults.filter(r => r.action === "COUNT").length}</span>
                 </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-
-      {/* Run Button */}
-      <div className="p-4 border-t border-gray-700">
-        <Button
-          onClick={handleSimulate}
-          disabled={isSimulating || !activeWAF}
-          className="w-full bg-green-600 hover:bg-green-700"
-        >
-          {isSimulating ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Simulating...
-            </>
-          ) : (
-            <>
-              <Play className="w-4 h-4 mr-2" />
-              Run Simulation
-            </>
-          )}
-        </Button>
-        {!activeWAF && (
-          <p className="text-xs text-yellow-400 text-center mt-2">
-            Attach a WAF to an edge to enable simulation
-          </p>
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>
