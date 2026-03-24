@@ -269,6 +269,7 @@ interface TopologyCanvasInnerProps {
   evaluationStatus?: 'blocked' | 'allowed' | 'counted' | null;
   evaluatedWAFId?: string | null;
   isAnimating?: boolean;
+  bottomPanelOpen?: boolean;
 }
 
 const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
@@ -278,6 +279,7 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
   evaluationStatus,
   evaluatedWAFId,
   isAnimating,
+  bottomPanelOpen,
 }) => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition } = useReactFlow();
@@ -579,8 +581,19 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
         />
       </ReactFlow>
 
-      {/* Resource Palette */}
-      <div className="absolute top-4 left-4 bg-gray-900/95 rounded-lg shadow-xl p-3 border border-gray-700 backdrop-blur-sm max-w-[160px]">
+      {/* Resource Palette - collapses when bottom panel open */}
+      {bottomPanelOpen ? (
+        <div className="absolute top-4 left-0 z-20">
+          <button
+            onClick={() => {/* handled by parent state if needed */}}
+            className="bg-gray-900/90 border border-gray-700 border-l-0 rounded-r-lg px-1.5 py-3 text-gray-400 hover:text-white hover:bg-gray-800 backdrop-blur-sm"
+            title="Show component palette"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      ) : (
+      <div className="absolute top-4 left-4 bg-gray-900/95 rounded-lg shadow-xl p-3 border border-gray-700 backdrop-blur-sm max-w-[160px] z-20">
         <div className="text-xs font-semibold text-gray-400 mb-2 flex items-center gap-1">
           <Plus className="w-3 h-3" />
           Drag to Canvas
@@ -640,6 +653,7 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
           ))}
         </div>
       </div>
+      )}
 
       {/* Instructions - open by default, collapsible */}
       <div className="absolute top-4 right-4 z-10">
@@ -701,6 +715,7 @@ interface TopologyCanvasProps {
   evaluationStatus?: 'blocked' | 'allowed' | 'counted' | null;
   evaluatedWAFId?: string | null;
   isAnimating?: boolean;
+  bottomPanelOpen?: boolean;
 }
 
 export const TopologyCanvas: React.FC<TopologyCanvasProps> = (props) => {
