@@ -192,6 +192,12 @@ export default function WAFSimPage() {
                   {tab === "logs" && <>📋 Sampled Requests {sampledRequests.length > 0 && <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0">{sampledRequests.length}</Badge>}</>}
                 </button>
               ))}
+              <button disabled className="px-3 py-1.5 text-sm rounded text-gray-600 cursor-not-allowed" title="Coming soon: guided false positive exception workflow">
+                🛠️ FP Helper <Badge variant="outline" className="text-[9px] px-1 text-gray-600 border-gray-700 ml-1">Soon</Badge>
+              </button>
+              <button disabled className="px-3 py-1.5 text-sm font-medium rounded text-gray-600 cursor-not-allowed flex items-center gap-1.5" title="Coming soon: guided false positive exception workflow">
+                🛠️ False Positive Helper <Badge variant="outline" className="text-[9px] px-1 text-gray-600 border-gray-700">Soon</Badge>
+              </button>
               {bottomTab && (
                 <button onClick={() => setBottomTab(null)} className="text-gray-500 hover:text-gray-300 ml-1" title="Close panel">
                   <X className="w-4 h-4" />

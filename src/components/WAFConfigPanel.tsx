@@ -431,14 +431,14 @@ export const WAFConfigPanel: React.FC<WAFConfigPanelProps> = ({ wafId, onEditRul
                       visibilityConfig: { sampledRequestsEnabled: true, cloudWatchMetricsEnabled: true, metricName: rg.name },
                     });
                   }}
-                  className={`w-full text-left px-2 py-1.5 rounded text-[11px] flex items-center gap-2 transition-colors ${alreadyAdded ? "opacity-40 cursor-not-allowed" : "hover:bg-gray-800 cursor-pointer"}`}
+                  className={`w-full text-left px-2.5 py-2 rounded text-xs flex items-center gap-2 transition-colors ${alreadyAdded ? "opacity-40 cursor-not-allowed" : "hover:bg-gray-800 cursor-pointer"}`}
                 >
                   <Plus className="w-3 h-3 shrink-0 text-gray-500" />
                   <div className="min-w-0 flex-1">
                     <div className="font-medium truncate">{rg.label}</div>
-                    <div className="text-[10px] text-gray-500 truncate">{rg.desc}</div>
+                    <div className="text-[11px] text-gray-500 truncate">{rg.desc}</div>
                   </div>
-                  <span className="text-[10px] text-gray-600 shrink-0">{rg.wcu}</span>
+                  <span className="text-[11px] text-gray-500 font-mono shrink-0">{rg.wcu}</span>
                 </button>
               );
             })}
@@ -475,7 +475,7 @@ export const WAFConfigPanel: React.FC<WAFConfigPanelProps> = ({ wafId, onEditRul
                 <Plus className="w-3 h-3 shrink-0 text-gray-500" />
                 <div className="min-w-0 flex-1">
                   <div className="font-medium">{preset.name}</div>
-                  <div className="text-[10px] text-gray-500">{preset.desc}</div>
+                  <div className="text-[11px] text-gray-500">{preset.desc}</div>
                 </div>
               </button>
             ))}

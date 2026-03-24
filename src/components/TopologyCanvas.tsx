@@ -349,10 +349,11 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
       const showTraffic = isAnimating && !isWAFConnection;
 
       let strokeColor = isWAFConnection ? "#dc2626" : "#4b5563";
-      if (isEvalEdge) {
+      const isSelected = selectedEdgeId === edge.id;
+      if (isSelected) {
+        strokeColor = "#fbbf24"; // Yellow selection always wins
+      } else if (isEvalEdge) {
         strokeColor = evaluationStatus === 'blocked' ? '#ef4444' : evaluationStatus === 'allowed' ? '#22c55e' : '#eab308';
-      } else if (selectedEdgeId === edge.id) {
-        strokeColor = "#fbbf24";
       }
 
       return {
@@ -415,9 +416,32 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
           toast.error(`${targetNode?.label || "This resource"} does not support WAF`);
           return;
         }
-        // Create the visual WAF-to-resource edge and associate WAF with the resource's traffic edge
+
+        // Scope validation: check if WAF already has a scope from another connection
+        const waf = wafs.find(w => w.id === sourceNode.wafId);
+        const targetScope = targetNode.scope || "REGIONAL";
+        if (waf) {
+          // Check existing WAF connections for scope conflicts
+          const existingWAFEdges = storeEdges.filter(e => e.wafId === waf.id && e.source === sourceNode.id);
+          for (const existing of existingWAFEdges) {
+            const existingTarget = storeNodes.find(n => n.id === existing.target);
+            const existingScope = existingTarget?.scope || "REGIONAL";
+            if (existingScope !== targetScope) {
+              toast.error(
+                `Scope conflict: this WebACL is already associated with a ${existingScope} resource (${existingTarget?.label}). ` +
+                `A WebACL cannot protect both CloudFront and Regional resources. ` +
+                `Create a separate WebACL for ${targetScope} resources.`
+              );
+              return;
+            }
+          }
+          // Auto-set WAF scope based on target
+          const { updateWAF } = useWAFSimStore.getState();
+          updateWAF(waf.id, { scope: targetScope as "CLOUDFRONT" | "REGIONAL" });
+        }
+
         addEdge({ source: params.source!, target: params.target!, wafId: sourceNode.wafId });
-        toast.success(`WAF protecting ${targetNode.label}`);
+        toast.success(`WAF protecting ${targetNode.label} (${targetScope} scope)`);
         return;
       }
 
