@@ -293,6 +293,7 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
     addNode,
     addEdge,
     removeNode,
+    removeEdge,
     setNodes,
     attachWAFToEdge,
     createWAF,
@@ -355,8 +356,10 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
         targetHandle: isWAFConnection ? "waf-in" : "traffic-in",
         type: isWAFConnection ? "straight" : "smoothstep",
         animated: showTraffic || !!isEvalEdge,
+        selected: selectedEdgeId === edge.id,
+        interactionWidth: 20,
         style: {
-          strokeWidth: isEvalEdge ? 3 : 2,
+          strokeWidth: isEvalEdge ? 3 : selectedEdgeId === edge.id ? 3 : 2,
           stroke: strokeColor,
           strokeDasharray: isWAFConnection && !isEvalEdge ? "6 3" : undefined,
         },
@@ -434,6 +437,26 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
       onEdgeClick?.(edge.id);
     },
     [selectEdge, onEdgeClick]
+  );
+
+  // Handle edge deletion (Delete/Backspace key)
+  const handleEdgesDelete = useCallback(
+    (deletedEdges: Edge[]) => {
+      for (const edge of deletedEdges) {
+        removeEdge(edge.id);
+      }
+    },
+    [removeEdge]
+  );
+
+  // Handle node deletion
+  const handleNodesDelete = useCallback(
+    (deletedNodes: Node[]) => {
+      for (const node of deletedNodes) {
+        removeNode(node.id);
+      }
+    },
+    [removeNode]
   );
 
   // Handle drop from palette
@@ -521,6 +544,8 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
         onConnect={onConnect}
         onNodeClick={handleNodeClick}
         onEdgeClick={handleEdgeClick}
+        onEdgesDelete={handleEdgesDelete}
+        onNodesDelete={handleNodesDelete}
         onNodeDragStop={onNodeDragStop}
         onDrop={onDrop}
         onDragOver={onDragOver}
@@ -528,7 +553,9 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
         fitView
         snapToGrid
         snapGrid={[20, 20]}
-        deleteKeyCode="Delete"
+        deleteKeyCode={["Delete", "Backspace"]}
+        edgesFocusable
+        edgesReconnectable
         className="bg-gray-950"
       >
         <Background color="#374151" gap={20} />
