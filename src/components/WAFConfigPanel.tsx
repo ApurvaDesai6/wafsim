@@ -179,17 +179,31 @@ export const WAFConfigPanel: React.FC<WAFConfigPanelProps> = ({ wafId, onEditRul
     }
   };
 
+  const [editingName, setEditingName] = useState(false);
+
   return (
-    <div className="h-full flex flex-col bg-gray-900 text-white">
+    <div className="h-full flex flex-col bg-gray-900 text-white overflow-hidden">
       {/* Header */}
       <div className="p-4 border-b border-gray-700">
         <div className="flex items-center gap-2 mb-3">
-          <Shield className="w-5 h-5 text-red-400" />
-          <Input
-            value={waf.name}
-            onChange={(e) => updateWAF(wafId, { name: e.target.value })}
-            className="bg-transparent border-none text-lg font-semibold p-0 h-auto focus-visible:ring-0 focus-visible:ring-offset-0 hover:bg-gray-800 rounded px-1 -ml-1"
-          />
+          <Shield className="w-5 h-5 text-red-400 shrink-0" />
+          {editingName ? (
+            <Input
+              autoFocus
+              value={waf.name}
+              onChange={(e) => updateWAF(wafId, { name: e.target.value })}
+              onBlur={() => setEditingName(false)}
+              onKeyDown={(e) => e.key === "Enter" && setEditingName(false)}
+              className="bg-gray-800 border-gray-700 text-lg font-semibold h-8 px-2"
+            />
+          ) : (
+            <>
+              <h2 className="text-lg font-semibold truncate">{waf.name}</h2>
+              <button onClick={() => setEditingName(true)} className="text-gray-500 hover:text-gray-300 shrink-0">
+                <Edit className="w-3.5 h-3.5" />
+              </button>
+            </>
+          )}
         </div>
 
         {/* WAF Settings */}

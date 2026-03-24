@@ -28,6 +28,9 @@ interface SampledRequest {
   timestamp: string;
   request: HttpRequest;
   result: EvaluationResult;
+  wafName: string;
+  wafId: string;
+  pathResults: Array<{ wafName: string; wafId: string; result: EvaluationResult }>;
 }
 
 export default function WAFSimPage() {
@@ -86,30 +89,44 @@ export default function WAFSimPage() {
     toast.success(`WAF attached to ${node.label}`);
   }, [selectedNodeId, nodes, edges, createWAFOnEdge]);
 
-  // Run simulation with traffic animation
+  // Run simulation through ALL WAFs in the topology
   const handleSimulate = useCallback(() => {
-    if (!activeWAF) { toast.error("No WAF configured"); return; }
+    if (wafs.length === 0) { toast.error("No WAF configured"); return; }
     setIsSimulating(true);
     setIsAnimating(true);
 
-    // Delay result to show animation
     setTimeout(() => {
-      const result = evaluateWebACL(currentRequest, activeWAF, { ipSets, regexPatternSets });
-      setEvaluationResultWithWAF(result, activeWAF.id);
+      const pathResults: Array<{ wafName: string; wafId: string; result: EvaluationResult }> = [];
+      let finalResult: EvaluationResult | null = null;
+      let terminatingWafId: string | null = null;
+
+      for (const waf of wafs) {
+        const result = evaluateWebACL(currentRequest, waf, { ipSets, regexPatternSets });
+        pathResults.push({ wafName: waf.name, wafId: waf.id, result });
+        finalResult = result;
+        terminatingWafId = waf.id;
+        if (result.finalAction === "BLOCK" || result.finalAction === "CAPTCHA" || result.finalAction === "CHALLENGE") {
+          break;
+        }
+      }
+
+      if (finalResult && terminatingWafId) {
+        setEvaluationResultWithWAF(finalResult, terminatingWafId);
+      }
       setIsSimulating(false);
 
       setSampledRequests(prev => [{
         timestamp: new Date().toISOString(),
         request: currentRequest,
-        result,
+        result: finalResult!,
+        wafName: wafs.find(w => w.id === terminatingWafId)?.name || "",
+        wafId: terminatingWafId!,
+        pathResults,
       }, ...prev].slice(0, 100));
 
       if (!bottomTab) setBottomTab("results");
-
-      // Stop animation after a bit
-      setTimeout(() => setIsAnimating(false), 2000);
-    }, 800);
-  }, [activeWAF, currentRequest, ipSets, regexPatternSets, bottomTab]);
+    }, 600);
+  }, [wafs, currentRequest, ipSets, regexPatternSets, bottomTab]);
 
   const handleNodeClick = useCallback((nodeId: string) => selectNode(nodeId), [selectNode]);
   const handleEdgeClick = useCallback((edgeId: string) => {
@@ -201,10 +218,17 @@ export default function WAFSimPage() {
                 </button>
               )}
               <div className="flex-1" />
-              {activeWAF && (
-                <Button size="sm" onClick={handleSimulate} disabled={isSimulating} className="h-8 text-sm bg-green-700 hover:bg-green-600 px-5">
-                  <Play className="w-4 h-4 mr-1.5" />{isSimulating ? "Running..." : "Run Test"}
-                </Button>
+              {wafs.length > 0 && (
+                <>
+                  {isAnimating && (
+                    <Button size="sm" onClick={() => setIsAnimating(false)} variant="outline" className="h-8 text-sm px-3 border-gray-600">
+                      ⏹ Stop
+                    </Button>
+                  )}
+                  <Button size="sm" onClick={handleSimulate} disabled={isSimulating} className="h-8 text-sm bg-green-700 hover:bg-green-600 px-5">
+                    <Play className="w-4 h-4 mr-1.5" />{isSimulating ? "Running..." : "Run Test"}
+                  </Button>
+                </>
               )}
             </div>
 
@@ -233,10 +257,10 @@ export default function WAFSimPage() {
                             <th className="p-1.5">Method</th>
                             <th className="p-1.5">URI</th>
                             <th className="p-1.5">Source IP</th>
-                            <th className="p-1.5">Country</th>
                             <th className="p-1.5">Action</th>
+                            <th className="p-1.5">WAF</th>
                             <th className="p-1.5">Rule</th>
-                            <th className="p-1.5">Labels</th>
+                            <th className="p-1.5">Path</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -247,14 +271,20 @@ export default function WAFSimPage() {
                               <td className="p-1.5"><Badge variant="outline" className="text-[9px] px-1">{sr.request.method}</Badge></td>
                               <td className="p-1.5 font-mono max-w-[180px] truncate">{sr.request.uri}</td>
                               <td className="p-1.5 font-mono">{sr.request.sourceIP}</td>
-                              <td className="p-1.5">{sr.request.country}</td>
                               <td className="p-1.5">
                                 <Badge className={`text-[9px] px-1 ${sr.result.finalAction === "BLOCK" ? "bg-red-600" : sr.result.finalAction === "ALLOW" ? "bg-green-600" : "bg-yellow-600"}`}>
                                   {sr.result.finalAction}
                                 </Badge>
                               </td>
+                              <td className="p-1.5 text-gray-300 max-w-[100px] truncate">{sr.wafName}</td>
                               <td className="p-1.5 text-gray-300 max-w-[120px] truncate">{sr.result.terminatingRule?.rule.name || "Default"}</td>
-                              <td className="p-1.5 text-gray-500 max-w-[150px] truncate">{sr.result.labelsApplied.join(", ") || "—"}</td>
+                              <td className="p-1.5 text-gray-500">
+                                {sr.pathResults.map((pr, j) => (
+                                  <Badge key={j} variant="outline" className={`text-[8px] px-1 mr-0.5 ${pr.result.finalAction === "BLOCK" ? "border-red-600 text-red-400" : "border-green-600 text-green-400"}`}>
+                                    {pr.wafName}: {pr.result.finalAction}
+                                  </Badge>
+                                ))}
+                              </td>
                             </tr>
                           ))}
                         </tbody>

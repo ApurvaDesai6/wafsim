@@ -178,7 +178,7 @@ const AWSResourceNodeComponent: React.FC<{
             )}
           </div>
         </TooltipTrigger>
-        <TooltipContent side="top" className="bg-gray-800 border-gray-700">
+        <TooltipContent side="top" className="bg-gray-800 border-gray-700 text-white">
           <div className="text-xs">
             <div className="font-semibold">{data.label}</div>
             <div className="text-gray-400">Type: {data.type}</div>
@@ -228,7 +228,7 @@ const WAFNodeComponent: React.FC<{
             <Handle type="source" position={Position.Bottom} id="waf-out" className="w-3 h-3 !bg-red-400 hover:!bg-red-300" />
           </div>
         </TooltipTrigger>
-        <TooltipContent side="top" className="bg-gray-800 border-gray-700">
+        <TooltipContent side="top" className="bg-gray-800 border-gray-700 text-white">
           <div className="text-xs">
             <div className="font-semibold">{data.wafName}</div>
             <div className="text-gray-400">Rules: {data.rulesCount || 0}</div>
@@ -673,7 +673,7 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
                     )}
                   </div>
                 </TooltipTrigger>
-                <TooltipContent side="right" className="bg-gray-800 border-gray-700">
+                <TooltipContent side="right" className="bg-gray-800 border-gray-700 text-white">
                   <div className="text-xs">
                     {resource.wafAttachable 
                       ? "WAF can protect this resource" 

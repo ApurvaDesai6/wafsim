@@ -33,8 +33,9 @@ interface TrafficSimulatorProps {
 
 export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate }) => {
   const { currentRequest, setCurrentRequest, wafs, ipSets, regexPatternSets, setEvaluationResultWithWAF, setIsSimulating } = useWAFSimStore();
-  const [activeSection, setActiveSection] = useState<"form" | "presets" | "batch">("form");
+  const [activeSection, setActiveSection] = useState<"form" | "presets" | "batch" | "flood">("form");
   const [batchResults, setBatchResults] = useState<Array<{ name: string; category: string; action: string }> | null>(null);
+  const [floodConfig, setFloodConfig] = useState({ rps: 50, duration: 60, sourceIPs: 1, uri: "/api/endpoint", method: "GET" as string });
 
   const activeWAF = wafs.length > 0 ? wafs[0] : null;
 
@@ -79,7 +80,7 @@ export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate }
     <div className="h-full flex text-white text-xs">
       {/* Section tabs (vertical) */}
       <div className="w-20 bg-gray-900 border-r border-gray-800 flex flex-col shrink-0">
-        {([["form", "📝 Form"], ["presets", "⚡ Presets"], ["batch", "🧪 Batch"]] as const).map(([key, label]) => (
+        {([["form", "📝 Form"], ["presets", "⚡ Presets"], ["batch", "🧪 Batch"], ["flood", "🌊 Flood/Rate"]] as const).map(([key, label]) => (
           <button key={key} onClick={() => setActiveSection(key)}
             className={`px-2 py-2 text-[11px] text-left border-b border-gray-800 transition-colors ${activeSection === key ? "bg-gray-800 text-white font-medium" : "text-gray-500 hover:text-gray-300 hover:bg-gray-800/50"}`}>
             {label}
@@ -194,6 +195,48 @@ export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate }
                 ))}
               </div>
             )}
+          </div>
+        )}
+        {activeSection === "flood" && (
+          <div className="space-y-3">
+            <p className="text-gray-400 text-[11px]">Simulate volumetric attacks and rate-based rule behavior.</p>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <Label className="text-[10px] text-gray-500 uppercase">Requests/sec</Label>
+                <Input type="number" value={floodConfig.rps} onChange={e => setFloodConfig({...floodConfig, rps: parseInt(e.target.value) || 1})} className="bg-gray-800 border-gray-700 h-7 text-xs" />
+              </div>
+              <div>
+                <Label className="text-[10px] text-gray-500 uppercase">Duration (sec)</Label>
+                <Input type="number" value={floodConfig.duration} onChange={e => setFloodConfig({...floodConfig, duration: parseInt(e.target.value) || 1})} className="bg-gray-800 border-gray-700 h-7 text-xs" />
+              </div>
+              <div>
+                <Label className="text-[10px] text-gray-500 uppercase">Source IPs</Label>
+                <Input type="number" value={floodConfig.sourceIPs} onChange={e => setFloodConfig({...floodConfig, sourceIPs: parseInt(e.target.value) || 1})} min={1} max={100} className="bg-gray-800 border-gray-700 h-7 text-xs" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-[10px] text-gray-500 uppercase">Target URI</Label>
+                <Input value={floodConfig.uri} onChange={e => setFloodConfig({...floodConfig, uri: e.target.value})} className="bg-gray-800 border-gray-700 h-7 text-xs font-mono" />
+              </div>
+              <div>
+                <Label className="text-[10px] text-gray-500 uppercase">Method</Label>
+                <Select value={floodConfig.method} onValueChange={v => setFloodConfig({...floodConfig, method: v})}>
+                  <SelectTrigger className="bg-gray-800 border-gray-700 h-7 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {["GET","POST","PUT","DELETE"].map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="bg-gray-800 rounded p-2 text-[11px] text-gray-400 space-y-1">
+              <div>Total requests: <span className="text-white font-mono">{floodConfig.rps * floodConfig.duration}</span></div>
+              <div>From <span className="text-white font-mono">{floodConfig.sourceIPs}</span> unique IP{floodConfig.sourceIPs > 1 ? "s" : ""}</div>
+              <div>Rate per IP: <span className="text-white font-mono">{Math.ceil(floodConfig.rps / floodConfig.sourceIPs)}</span> req/sec = <span className="text-white font-mono">{Math.ceil((floodConfig.rps / floodConfig.sourceIPs) * 300)}</span> per 5min window</div>
+            </div>
+            <Button onClick={onSimulate} disabled={!activeWAF} size="sm" className="w-full bg-orange-600 hover:bg-orange-700">
+              🌊 Run Flood Simulation
+            </Button>
           </div>
         )}
       </div>
