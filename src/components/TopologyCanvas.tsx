@@ -204,7 +204,7 @@ const WAFNodeComponent: React.FC<{
             `}
             onDoubleClick={data.onDoubleClick}
           >
-            <Handle type="target" position={Position.Left} className="w-3 h-3 !bg-red-400" />
+            <Handle type="target" position={Position.Top} className="w-3 h-3 !bg-red-400" />
 
             <div className="flex items-center gap-2">
               <Shield className="w-5 h-5 text-red-300" />
@@ -216,7 +216,7 @@ const WAFNodeComponent: React.FC<{
               </div>
             </div>
 
-            <Handle type="source" position={Position.Right} className="w-3 h-3 !bg-red-400" />
+            <Handle type="source" position={Position.Bottom} className="w-3 h-3 !bg-red-400" />
           </div>
         </TooltipTrigger>
         <TooltipContent side="top" className="bg-gray-800 border-gray-700">

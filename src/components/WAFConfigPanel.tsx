@@ -232,51 +232,6 @@ export const WAFConfigPanel: React.FC<WAFConfigPanelProps> = ({ wafId, onEditRul
         <WCUBudgetMeter rules={waf.rules} />
       </div>
 
-      {/* Quick Start Presets */}
-      {waf.rules.length === 0 && (
-        <div className="px-4 py-3 border-b border-gray-700 space-y-2">
-          <Label className="text-xs text-gray-400 uppercase tracking-wide">Quick Start</Label>
-          <div className="grid grid-cols-1 gap-1.5">
-            {[
-              { name: "OWASP Core", desc: "SQLi + XSS + path traversal", rules: [
-                { name: "BlockSQLi", statement: { type: "SqliMatchStatement" as const, fieldToMatch: { type: "ALL_QUERY_ARGUMENTS" as const }, textTransformations: [{ type: "URL_DECODE" as const, priority: 1 }, { type: "LOWERCASE" as const, priority: 2 }], sensitivityLevel: "HIGH" as const }, action: "BLOCK" as const },
-                { name: "BlockXSS", statement: { type: "XssMatchStatement" as const, fieldToMatch: { type: "BODY" as const, oversizeHandling: "CONTINUE" as const }, textTransformations: [{ type: "HTML_ENTITY_DECODE" as const, priority: 1 }], sensitivityLevel: "HIGH" as const }, action: "BLOCK" as const },
-                { name: "BlockPathTraversal", statement: { type: "ByteMatchStatement" as const, searchString: "../", fieldToMatch: { type: "URI_PATH" as const }, textTransformations: [{ type: "URL_DECODE" as const, priority: 1 }, { type: "NORMALIZE_PATH" as const, priority: 2 }], positionalConstraint: "CONTAINS" as const }, action: "BLOCK" as const },
-              ]},
-              { name: "Geo Block", desc: "Block high-risk countries", rules: [
-                { name: "GeoBlock", statement: { type: "GeoMatchStatement" as const, countryCodes: ["RU", "CN", "KP", "IR"] }, action: "BLOCK" as const },
-              ]},
-              { name: "Rate Limit", desc: "100 req/5min per IP", rules: [
-                { name: "RateLimit", statement: { type: "RateBasedStatement" as const, rateLimit: 100, evaluationWindowSec: 300, aggregateKeyType: "IP" as const }, action: "BLOCK" as const },
-              ]},
-            ].map((preset) => (
-              <Button
-                key={preset.name}
-                size="sm"
-                variant="outline"
-                className="justify-start text-xs border-gray-700 hover:bg-gray-800 h-auto py-1.5"
-                onClick={() => {
-                  preset.rules.forEach((r, i) => {
-                    addRuleToWAF(wafId, {
-                      name: r.name,
-                      priority: waf.rules.length + i + 1,
-                      statement: r.statement as Statement,
-                      action: r.action,
-                      visibilityConfig: { sampledRequestsEnabled: true, cloudWatchMetricsEnabled: true, metricName: r.name },
-                    });
-                  });
-                }}
-              >
-                <div className="text-left">
-                  <div className="font-medium">{preset.name}</div>
-                  <div className="text-gray-500 text-[10px]">{preset.desc}</div>
-                </div>
-              </Button>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Rules List */}
       <div className="flex-1 overflow-y-auto">
         <div className="p-4">
@@ -483,6 +438,43 @@ export const WAFConfigPanel: React.FC<WAFConfigPanelProps> = ({ wafId, onEditRul
                 </button>
               );
             })}
+          </div>
+        </details>
+
+        {/* Custom Rule Presets */}
+        <details className="group">
+          <summary className="px-4 py-2 cursor-pointer text-xs font-semibold text-gray-400 hover:text-gray-200 select-none flex items-center gap-1">
+            <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" />
+            Custom Rule Presets
+          </summary>
+          <div className="px-4 pb-3 space-y-1">
+            {[
+              { name: "OWASP Core", desc: "SQLi + XSS + path traversal", rules: [
+                { name: "BlockSQLi", statement: { type: "SqliMatchStatement" as const, fieldToMatch: { type: "ALL_QUERY_ARGUMENTS" as const }, textTransformations: [{ type: "URL_DECODE" as const, priority: 1 }, { type: "LOWERCASE" as const, priority: 2 }], sensitivityLevel: "HIGH" as const }, action: "BLOCK" as const },
+                { name: "BlockXSS", statement: { type: "XssMatchStatement" as const, fieldToMatch: { type: "BODY" as const, oversizeHandling: "CONTINUE" as const }, textTransformations: [{ type: "HTML_ENTITY_DECODE" as const, priority: 1 }], sensitivityLevel: "HIGH" as const }, action: "BLOCK" as const },
+                { name: "BlockPathTraversal", statement: { type: "ByteMatchStatement" as const, searchString: "../", fieldToMatch: { type: "URI_PATH" as const }, textTransformations: [{ type: "URL_DECODE" as const, priority: 1 }, { type: "NORMALIZE_PATH" as const, priority: 2 }], positionalConstraint: "CONTAINS" as const }, action: "BLOCK" as const },
+              ]},
+              { name: "Geo Block", desc: "Block RU, CN, KP, IR", rules: [
+                { name: "GeoBlock", statement: { type: "GeoMatchStatement" as const, countryCodes: ["RU", "CN", "KP", "IR"] }, action: "BLOCK" as const },
+              ]},
+              { name: "Rate Limit", desc: "100 req/5min per IP", rules: [
+                { name: "RateLimit", statement: { type: "RateBasedStatement" as const, rateLimit: 100, evaluationWindowSec: 300, aggregateKeyType: "IP" as const }, action: "BLOCK" as const },
+              ]},
+            ].map(preset => (
+              <button key={preset.name} onClick={() => {
+                preset.rules.forEach((r, i) => addRuleToWAF(wafId, {
+                  name: r.name, priority: waf.rules.length + i + 1,
+                  statement: r.statement as Statement, action: r.action,
+                  visibilityConfig: { sampledRequestsEnabled: true, cloudWatchMetricsEnabled: true, metricName: r.name },
+                }));
+              }} className="w-full text-left px-2 py-1.5 rounded text-[11px] hover:bg-gray-800 flex items-center gap-2">
+                <Plus className="w-3 h-3 shrink-0 text-gray-500" />
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium">{preset.name}</div>
+                  <div className="text-[10px] text-gray-500">{preset.desc}</div>
+                </div>
+              </button>
+            ))}
           </div>
         </details>
       </div>

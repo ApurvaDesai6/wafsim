@@ -181,10 +181,10 @@ export default function WAFSimPage() {
 
           {/* Bottom Panel Bar */}
           <div className="border-t border-gray-700 bg-gray-900 shrink-0">
-            <div className="flex items-center h-10 px-3 gap-1.5">
+            <div className="flex items-center h-11 px-3 gap-2">
               {(["simulator", "results", "logs"] as const).map(tab => (
                 <button key={tab} onClick={() => setBottomTab(bottomTab === tab ? null : tab)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${bottomTab === tab ? "bg-gray-700 text-white" : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"}`}>
+                  className={`px-3 py-1.5 text-sm font-medium rounded transition-colors ${bottomTab === tab ? "bg-gray-700 text-white" : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"}`}>
                   {tab === "simulator" && "⚡ Simulate"}
                   {tab === "results" && <>📊 Results {evaluationResult && <Badge className={`ml-1.5 text-[10px] px-1.5 py-0 ${evaluationResult.finalAction === "BLOCK" ? "bg-red-600" : evaluationResult.finalAction === "ALLOW" ? "bg-green-600" : "bg-yellow-600"}`}>{evaluationResult.finalAction}</Badge>}</>}
                   {tab === "logs" && <>📋 Sampled Requests {sampledRequests.length > 0 && <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0">{sampledRequests.length}</Badge>}</>}
@@ -192,8 +192,8 @@ export default function WAFSimPage() {
               ))}
               <div className="flex-1" />
               {activeWAF && (
-                <Button size="sm" onClick={handleSimulate} disabled={isSimulating} className="h-7 text-xs bg-green-700 hover:bg-green-600 px-4">
-                  <Play className="w-3.5 h-3.5 mr-1.5" />{isSimulating ? "Running..." : "Run Test"}
+                <Button size="sm" onClick={handleSimulate} disabled={isSimulating} className="h-8 text-sm bg-green-700 hover:bg-green-600 px-5">
+                  <Play className="w-4 h-4 mr-1.5" />{isSimulating ? "Running..." : "Run Test"}
                 </Button>
               )}
             </div>
