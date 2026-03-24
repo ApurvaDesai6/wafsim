@@ -185,7 +185,11 @@ export const WAFConfigPanel: React.FC<WAFConfigPanelProps> = ({ wafId, onEditRul
       <div className="p-4 border-b border-gray-700">
         <div className="flex items-center gap-2 mb-3">
           <Shield className="w-5 h-5 text-red-400" />
-          <h2 className="text-lg font-semibold">{waf.name}</h2>
+          <Input
+            value={waf.name}
+            onChange={(e) => updateWAF(wafId, { name: e.target.value })}
+            className="bg-transparent border-none text-lg font-semibold p-0 h-auto focus-visible:ring-0 focus-visible:ring-offset-0 hover:bg-gray-800 rounded px-1 -ml-1"
+          />
         </div>
 
         {/* WAF Settings */}

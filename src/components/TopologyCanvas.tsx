@@ -124,7 +124,18 @@ const AWSResourceNodeComponent: React.FC<{
               <Handle
                 type="target"
                 position={Position.Left}
+                id="traffic-in"
                 className="w-3 h-3 !bg-gray-400 hover:!bg-blue-400 transition-colors"
+              />
+            )}
+
+            {/* WAF attachment handle - only on WAF-eligible resources */}
+            {data.wafAttachable && (
+              <Handle
+                type="target"
+                position={Position.Top}
+                id="waf-in"
+                className="w-3 h-3 !bg-red-400 hover:!bg-red-300 transition-colors"
               />
             )}
 
@@ -132,7 +143,7 @@ const AWSResourceNodeComponent: React.FC<{
               <div className={`${getNodeColor()} p-1.5 rounded`}>{getIcon()}</div>
               <div>
                 <div className="font-semibold text-xs">{data.label}</div>
-                {data.wafAttachable && (
+                {data.wafAttachable && !hasWAF && (
                   <div className="text-[10px] text-green-400 flex items-center gap-1">
                     <Shield className="w-2.5 h-2.5" />
                     WAF Ready
@@ -147,7 +158,6 @@ const AWSResourceNodeComponent: React.FC<{
               </div>
             )}
 
-            {/* Evaluation status indicator */}
             {evalStatus && (
               <div className={`absolute -bottom-2 left-1/2 transform -translate-x-1/2 px-2 py-0.5 rounded text-[10px] font-bold
                 ${evalStatus === 'blocked' ? 'bg-red-500 text-white' : ''}
@@ -162,6 +172,7 @@ const AWSResourceNodeComponent: React.FC<{
               <Handle
                 type="source"
                 position={Position.Right}
+                id="traffic-out"
                 className="w-3 h-3 !bg-gray-400 hover:!bg-blue-400 transition-colors"
               />
             )}
@@ -204,8 +215,6 @@ const WAFNodeComponent: React.FC<{
             `}
             onDoubleClick={data.onDoubleClick}
           >
-            <Handle type="target" position={Position.Top} className="w-3 h-3 !bg-red-400" />
-
             <div className="flex items-center gap-2">
               <Shield className="w-5 h-5 text-red-300" />
               <div>
@@ -216,7 +225,7 @@ const WAFNodeComponent: React.FC<{
               </div>
             </div>
 
-            <Handle type="source" position={Position.Bottom} className="w-3 h-3 !bg-red-400" />
+            <Handle type="source" position={Position.Bottom} id="waf-out" className="w-3 h-3 !bg-red-400 hover:!bg-red-300" />
           </div>
         </TooltipTrigger>
         <TooltipContent side="top" className="bg-gray-800 border-gray-700">
@@ -326,24 +335,30 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
   const reactFlowEdges: Edge[] = useMemo(() => {
     return storeEdges.map((edge) => {
       const isWAFEdge = !!edge.wafId;
+      const sourceNode = storeNodes.find(n => n.id === edge.source);
+      const isWAFConnection = sourceNode?.type === "WAF"; // WAF-to-resource edge
       const isEvalEdge = evaluationStatus && edge.wafId === evaluatedWAFId;
-      // Animate all edges during traffic flow, color the WAF edge based on result
-      const showTraffic = isAnimating;
-      
-      let strokeColor = edge.wafId ? "#ef4444" : selectedEdgeId === edge.id ? "#fbbf24" : "#4b5563";
+      const showTraffic = isAnimating && !isWAFConnection;
+
+      let strokeColor = isWAFConnection ? "#dc2626" : "#4b5563";
       if (isEvalEdge) {
         strokeColor = evaluationStatus === 'blocked' ? '#ef4444' : evaluationStatus === 'allowed' ? '#22c55e' : '#eab308';
+      } else if (selectedEdgeId === edge.id) {
+        strokeColor = "#fbbf24";
       }
 
       return {
         id: edge.id,
         source: edge.source,
         target: edge.target,
-        type: "smoothstep",
+        sourceHandle: isWAFConnection ? "waf-out" : "traffic-out",
+        targetHandle: isWAFConnection ? "waf-in" : "traffic-in",
+        type: isWAFConnection ? "straight" : "smoothstep",
         animated: showTraffic || !!isEvalEdge,
         style: {
           strokeWidth: isEvalEdge ? 3 : 2,
           stroke: strokeColor,
+          strokeDasharray: isWAFConnection && !isEvalEdge ? "6 3" : undefined,
         },
         markerEnd: { type: MarkerType.ArrowClosed, color: strokeColor },
         label: isEvalEdge ? evaluationStatus?.toUpperCase() : undefined,
@@ -356,7 +371,7 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
         labelBgBorderRadius: 4,
       };
     });
-  }, [storeEdges, selectedEdgeId, evaluationStatus, evaluatedWAFId, isAnimating]);
+  }, [storeEdges, storeNodes, selectedEdgeId, evaluationStatus, evaluatedWAFId, isAnimating]);
 
   const [nodes, setLocalNodes, onNodesChange] = useNodesState(reactFlowNodes);
   const [edges, setLocalEdges, onEdgesChange] = useEdgesState(reactFlowEdges);
@@ -384,28 +399,23 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
       const sourceNode = storeNodes.find(n => n.id === params.source);
       const targetNode = storeNodes.find(n => n.id === params.target);
 
-      // WAF node connecting to a resource: associate WAF with that resource
-      if (sourceNode?.type === "WAF" && targetNode?.wafAttachable && sourceNode.wafId) {
-        // Find the incoming edge to the target resource and attach the WAF
-        const targetEdge = storeEdges.find(e => e.target === params.target && !e.wafId);
-        if (targetEdge) {
-          // Associate WAF with the edge
-          const waf = wafs.find(w => w.id === sourceNode.wafId);
-          if (waf) {
-            // Update edge to reference this WAF
-            const { setEdges: setStoreEdges } = useWAFSimStore.getState();
-            setStoreEdges(storeEdges.map(e => e.id === targetEdge.id ? { ...e, wafId: waf.id } : e));
-          }
+      // WAF node connecting to a resource
+      if (sourceNode?.type === "WAF" && sourceNode.wafId) {
+        if (!targetNode?.wafAttachable) {
+          toast.error(`${targetNode?.label || "This resource"} does not support WAF`);
+          return;
         }
-        // Also create the visual connection
-        addEdge({ source: params.source!, target: params.target! });
+        // Create the visual WAF-to-resource edge and associate WAF with the resource's traffic edge
+        addEdge({ source: params.source!, target: params.target!, wafId: sourceNode.wafId });
         toast.success(`WAF protecting ${targetNode.label}`);
-      } else {
-        addEdge({ source: params.source!, target: params.target! });
-        toast.success("Connection created!");
+        return;
       }
+
+      // Normal traffic connection
+      addEdge({ source: params.source!, target: params.target! });
+      toast.success("Connection created!");
     },
-    [addEdge, storeNodes, storeEdges, wafs]
+    [addEdge, storeNodes]
   );
 
   // Handle node click
