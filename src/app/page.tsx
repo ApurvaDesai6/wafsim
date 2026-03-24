@@ -192,6 +192,11 @@ export default function WAFSimPage() {
                   {tab === "logs" && <>📋 Sampled Requests {sampledRequests.length > 0 && <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0">{sampledRequests.length}</Badge>}</>}
                 </button>
               ))}
+              {bottomTab && (
+                <button onClick={() => setBottomTab(null)} className="text-gray-500 hover:text-gray-300 ml-1" title="Close panel">
+                  <X className="w-4 h-4" />
+                </button>
+              )}
               <div className="flex-1" />
               {activeWAF && (
                 <Button size="sm" onClick={handleSimulate} disabled={isSimulating} className="h-8 text-sm bg-green-700 hover:bg-green-600 px-5">
@@ -279,8 +284,10 @@ export default function WAFSimPage() {
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
               <Shield className="w-14 h-14 text-gray-700 mb-4" />
-              <p className="font-medium text-gray-400">No WAF Selected</p>
-              <p className="text-xs text-gray-500 mt-2">Click a node with a green border to attach a WAF, or click an existing WAF edge</p>
+              <p className="font-medium text-gray-400">AWS WAF Rule Simulator</p>
+              <p className="text-xs text-gray-500 mt-2 leading-relaxed max-w-[280px]">
+                Test and tune WAF rules against simulated traffic. Drag a WAF WebACL from the left palette and connect it to a resource to get started.
+              </p>
             </div>
           )}
         </div>

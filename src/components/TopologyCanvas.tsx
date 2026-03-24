@@ -301,7 +301,12 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
     createWAF,
   } = useWAFSimStore();
 
+  const [paletteHidden, setPaletteHidden] = useState(false);
   const [nodeConfigOpen, setNodeConfigOpen] = useState(false);
+  // Auto-hide palette when bottom panel opens, show when it closes
+  React.useEffect(() => {
+    setPaletteHidden(!!bottomPanelOpen);
+  }, [bottomPanelOpen]);
   const [selectedNodeForConfig, setSelectedNodeForConfig] = useState<string | null>(null);
 
   // Convert store nodes to React Flow nodes
@@ -581,11 +586,11 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
         />
       </ReactFlow>
 
-      {/* Resource Palette - collapses when bottom panel open */}
-      {bottomPanelOpen ? (
+      {/* Resource Palette - toggleable */}
+      {paletteHidden ? (
         <div className="absolute top-4 left-0 z-20">
           <button
-            onClick={() => {/* handled by parent state if needed */}}
+            onClick={() => setPaletteHidden(false)}
             className="bg-gray-900/90 border border-gray-700 border-l-0 rounded-r-lg px-1.5 py-3 text-gray-400 hover:text-white hover:bg-gray-800 backdrop-blur-sm"
             title="Show component palette"
           >
@@ -594,9 +599,9 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
         </div>
       ) : (
       <div className="absolute top-4 left-4 bg-gray-900/95 rounded-lg shadow-xl p-3 border border-gray-700 backdrop-blur-sm max-w-[160px] z-20">
-        <div className="text-xs font-semibold text-gray-400 mb-2 flex items-center gap-1">
-          <Plus className="w-3 h-3" />
-          Drag to Canvas
+        <div className="text-xs font-semibold text-gray-400 mb-2 flex items-center justify-between">
+          <span className="flex items-center gap-1"><Plus className="w-3 h-3" />Drag to Canvas</span>
+          <button onClick={() => setPaletteHidden(true)} className="text-gray-500 hover:text-gray-300"><X className="w-3 h-3" /></button>
         </div>
         
         {/* WAF Section */}
@@ -657,16 +662,21 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
 
       {/* Instructions - open by default, collapsible */}
       <div className="absolute top-4 right-4 z-10">
-        <details open className="bg-gray-900/90 rounded-lg shadow-xl border border-gray-700 backdrop-blur-sm text-xs max-w-[200px]">
-          <summary className="px-3 py-1.5 cursor-pointer text-gray-400 hover:text-gray-200 font-medium select-none">💡 Quick Tips</summary>
-          <ul className="px-3 pb-2 text-gray-500 space-y-0.5">
-            <li>• Drag resources onto canvas</li>
-            <li>• Drag a <b className="text-red-400">WAF WebACL</b> from the palette</li>
-            <li>• Connect WAF to any green-border resource</li>
-            <li>• One WAF can protect multiple resources</li>
-            <li>• Click a WAF node to configure rules</li>
-            <li>• Use the bottom bar to simulate traffic</li>
-          </ul>
+        <details open className="bg-gray-900/90 rounded-lg shadow-xl border border-gray-700 backdrop-blur-sm text-xs max-w-[220px]">
+          <summary className="px-3 py-1.5 cursor-pointer text-gray-400 hover:text-gray-200 font-medium select-none">ℹ️ About AWS WAFSim</summary>
+          <div className="px-3 pb-2.5 space-y-2">
+            <p className="text-gray-300 leading-relaxed">
+              Test and validate AWS WAF rule configurations against simulated HTTP traffic without a live AWS environment.
+            </p>
+            <div className="text-gray-500 space-y-0.5">
+              <p className="text-gray-400 font-medium">Getting started:</p>
+              <p>1. Drag a <b className="text-red-400">WAF WebACL</b> onto the canvas</p>
+              <p>2. Connect it to a resource (red dot → green border)</p>
+              <p>3. Click the WAF node to add rules</p>
+              <p>4. Open <b className="text-gray-300">⚡ Simulate</b> below to test requests</p>
+              <p>5. View results and sampled request logs</p>
+            </div>
+          </div>
         </details>
       </div>
 
