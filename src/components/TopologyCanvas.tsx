@@ -421,23 +421,26 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
         const waf = wafs.find(w => w.id === sourceNode.wafId);
         const targetScope = targetNode.scope || "REGIONAL";
         if (waf) {
-          // Check existing WAF connections for scope conflicts
-          const existingWAFEdges = storeEdges.filter(e => e.wafId === waf.id && e.source === sourceNode.id);
+          // Get fresh edges from store to avoid stale closure
+          const currentEdges = useWAFSimStore.getState().edges;
+          const currentNodes = useWAFSimStore.getState().nodes;
+          const existingWAFEdges = currentEdges.filter(e => e.wafId === sourceNode.wafId);
           for (const existing of existingWAFEdges) {
-            const existingTarget = storeNodes.find(n => n.id === existing.target);
-            const existingScope = existingTarget?.scope || "REGIONAL";
+            const existingTarget = currentNodes.find(n => n.id === existing.target);
+            if (!existingTarget) continue;
+            const existingScope = existingTarget.scope || "REGIONAL";
             if (existingScope !== targetScope) {
               toast.error(
-                `Scope conflict: this WebACL is already associated with a ${existingScope} resource (${existingTarget?.label}). ` +
-                `A WebACL cannot protect both CloudFront and Regional resources. ` +
-                `Create a separate WebACL for ${targetScope} resources.`
+                `Scope conflict: "${waf.name}" is already protecting ${existingTarget.label} (${existingScope}). ` +
+                `A single WebACL cannot protect both CloudFront and Regional resources. ` +
+                `Create a separate WebACL for ${targetScope} resources.`,
+                { duration: 6000 }
               );
               return;
             }
           }
           // Auto-set WAF scope based on target
-          const { updateWAF } = useWAFSimStore.getState();
-          updateWAF(waf.id, { scope: targetScope as "CLOUDFRONT" | "REGIONAL" });
+          useWAFSimStore.getState().updateWAF(waf.id, { scope: targetScope as "CLOUDFRONT" | "REGIONAL" });
         }
 
         addEdge({ source: params.source!, target: params.target!, wafId: sourceNode.wafId });

@@ -120,3 +120,13 @@
     @apply bg-background text-foreground;
   }
 }
+
+
+/* ReactFlow edge selection override */
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: #fbbf24 !important;
+  stroke-width: 3 !important;
+}
+.react-flow__edge.selected marker {
+  fill: #fbbf24 !important;
+}
