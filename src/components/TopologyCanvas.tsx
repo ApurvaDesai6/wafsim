@@ -270,6 +270,7 @@ interface TopologyCanvasInnerProps {
   evaluatedWAFId?: string | null;
   isAnimating?: boolean;
   bottomPanelOpen?: boolean;
+  wafResults?: Map<string, string>;
 }
 
 const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
@@ -280,6 +281,7 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
   evaluatedWAFId,
   isAnimating,
   bottomPanelOpen,
+  wafResults,
 }) => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition } = useReactFlow();
@@ -346,15 +348,21 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
       const sourceNode = storeNodes.find(n => n.id === edge.source);
       const isWAFConnection = sourceNode?.type === "WAF"; // WAF-to-resource edge
       const isEvalEdge = evaluationStatus && edge.wafId === evaluatedWAFId;
+      const thisWafResult = edge.wafId ? wafResults?.get(edge.wafId) : null;
       const showTraffic = isAnimating && !isWAFConnection;
 
       let strokeColor = isWAFConnection ? "#dc2626" : "#4b5563";
       const isSelected = selectedEdgeId === edge.id;
       if (isSelected) {
-        strokeColor = "#fbbf24"; // Yellow selection always wins
+        strokeColor = "#fbbf24";
+      } else if (thisWafResult) {
+        strokeColor = thisWafResult === 'BLOCK' ? '#ef4444' : thisWafResult === 'ALLOW' ? '#22c55e' : '#eab308';
       } else if (isEvalEdge) {
         strokeColor = evaluationStatus === 'blocked' ? '#ef4444' : evaluationStatus === 'allowed' ? '#22c55e' : '#eab308';
       }
+
+      const edgeLabel = thisWafResult || (isEvalEdge ? evaluationStatus?.toUpperCase() : undefined);
+      const labelColor = (thisWafResult === 'BLOCK' || evaluationStatus === 'blocked') ? '#dc2626' : (thisWafResult === 'ALLOW' || evaluationStatus === 'allowed') ? '#16a34a' : '#ca8a04';
 
       return {
         id: edge.id,
@@ -363,21 +371,18 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
         sourceHandle: isWAFConnection ? "waf-out" : "traffic-out",
         targetHandle: isWAFConnection ? "waf-in" : "traffic-in",
         type: isWAFConnection ? "straight" : "smoothstep",
-        animated: showTraffic || !!isEvalEdge,
+        animated: showTraffic || !!thisWafResult || !!isEvalEdge,
         selected: selectedEdgeId === edge.id,
         interactionWidth: 20,
         style: {
-          strokeWidth: isEvalEdge ? 3 : selectedEdgeId === edge.id ? 3 : 2,
+          strokeWidth: (thisWafResult || isEvalEdge || isSelected) ? 3 : 2,
           stroke: strokeColor,
-          strokeDasharray: isWAFConnection && !isEvalEdge ? "6 3" : undefined,
+          strokeDasharray: isWAFConnection && !thisWafResult && !isEvalEdge ? "6 3" : undefined,
         },
         markerEnd: { type: MarkerType.ArrowClosed, color: strokeColor },
-        label: isEvalEdge ? evaluationStatus?.toUpperCase() : undefined,
+        label: edgeLabel,
         labelStyle: { fill: '#fff', fontWeight: 700, fontSize: 10 },
-        labelBgStyle: {
-          fill: evaluationStatus === 'blocked' ? '#dc2626' : evaluationStatus === 'allowed' ? '#16a34a' : '#ca8a04',
-          fillOpacity: 0.9,
-        },
+        labelBgStyle: { fill: labelColor, fillOpacity: 0.9 },
         labelBgPadding: [4, 2] as [number, number],
         labelBgBorderRadius: 4,
       };
@@ -754,6 +759,7 @@ interface TopologyCanvasProps {
   evaluatedWAFId?: string | null;
   isAnimating?: boolean;
   bottomPanelOpen?: boolean;
+  wafResults?: Map<string, string>;
 }
 
 export const TopologyCanvas: React.FC<TopologyCanvasProps> = (props) => {

@@ -56,17 +56,22 @@ export default function WAFSimPage() {
   const [bottomHeight, setBottomHeight] = useState(300);
   const [sampledRequests, setSampledRequests] = useState<SampledRequest[]>([]);
   const [isAnimating, setIsAnimating] = useState(false);
+  const [wafResults, setWafResults] = useState<Map<string, string>>(new Map()); // wafId -> action
 
-  // Derive active WAF: prefer selected, fallback to first
-  const activeWAF = wafs.find(w => w.id === selectedWAFId) || (wafs.length > 0 ? wafs[0] : null);
+  // Only show WAF config when a WAF is explicitly selected (not fallback)
+  const activeWAF = wafs.find(w => w.id === selectedWAFId) || null;
+  // For simulation, use all WAFs
+  const hasAnyWAF = wafs.length > 0;
 
   // When node is clicked, auto-select its WAF if it has one
   useEffect(() => {
     if (!selectedNodeId) return;
     const node = nodes.find(n => n.id === selectedNodeId);
     if (node?.type === "WAF" && node.wafId) { selectWAF(node.wafId); setRightPanelOpen(true); return; }
-    const edge = edges.find(e => e.target === selectedNodeId && e.wafId);
-    if (edge?.wafId) { selectWAF(edge.wafId); setRightPanelOpen(true); }
+    const wafEdge = edges.find(e => e.target === selectedNodeId && e.wafId);
+    if (wafEdge?.wafId) { selectWAF(wafEdge.wafId); setRightPanelOpen(true); return; }
+    // Non-WAF node clicked: clear WAF selection
+    selectWAF(null as unknown as string);
   }, [selectedNodeId]);
 
   // Attach WAF to selected node - creates a visible WAF node and connects it
@@ -127,6 +132,10 @@ export default function WAFSimPage() {
       if (finalResult && terminatingWafId) {
         setEvaluationResultWithWAF(finalResult, terminatingWafId);
       }
+      // Store per-WAF results for visual feedback on each edge
+      const resultsMap = new Map<string, string>();
+      pathResults.forEach(pr => resultsMap.set(pr.wafId, pr.result.finalAction));
+      setWafResults(resultsMap);
       setIsSimulating(false);
 
       setSampledRequests(prev => [{
@@ -209,6 +218,7 @@ export default function WAFSimPage() {
               evaluatedWAFId={lastEvaluatedWAFId}
               isAnimating={isAnimating}
               bottomPanelOpen={!!bottomTab}
+              wafResults={wafResults}
             />
           </div>
 

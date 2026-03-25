@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Play, Plus, Trash2, Zap } from "lucide-react";
-import { evaluateWebACL } from "@/engines/wafEngine";
+import { evaluateWebACL, evaluateBatch } from "@/engines/wafEngine";
 
 const ATTACK_PRESETS: AttackPreset[] = [
   { id: "sqli-basic", name: "SQL Injection (Basic)", description: "' OR '1'='1 in query param", category: "sqli", request: { method: "GET", uri: "/api/users?id=1' OR '1'='1", sourceIP: "192.168.1.100", country: "US" } },
@@ -36,6 +36,7 @@ export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate }
   const [activeSection, setActiveSection] = useState<"form" | "presets" | "batch" | "flood">("form");
   const [batchResults, setBatchResults] = useState<Array<{ name: string; category: string; action: string }> | null>(null);
   const [floodConfig, setFloodConfig] = useState({ rps: 50, duration: 60, sourceIPs: 1, uri: "/api/endpoint", method: "GET" as string });
+  const [floodResults, setFloodResults] = useState<{ total: number; allowed: number; blocked: number; triggeredAt: number | null } | null>(null);
 
   const activeWAF = wafs.length > 0 ? wafs[0] : null;
 
@@ -67,6 +68,48 @@ export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate }
       return { name: p.name, category: p.category, action: evaluateWebACL(req, activeWAF, { ipSets, regexPatternSets }).finalAction };
     });
     setBatchResults(results);
+  };
+
+  const runFlood = () => {
+    if (!activeWAF) return;
+    const totalReqs = floodConfig.rps * floodConfig.duration;
+    const reqsPerIP = Math.ceil(totalReqs / floodConfig.sourceIPs);
+    const intervalMs = Math.max(1, Math.floor(1000 / floodConfig.rps));
+
+    // Generate requests
+    const requests: HttpRequest[] = [];
+    for (let i = 0; i < Math.min(totalReqs, 2000); i++) { // Cap at 2000 for performance
+      const ipIndex = i % floodConfig.sourceIPs;
+      requests.push({
+        protocol: "HTTP/1.1",
+        method: floodConfig.method as any,
+        uri: floodConfig.uri,
+        queryParams: {},
+        headers: [{ name: "Host", value: "example.com" }, { name: "User-Agent", value: "Mozilla/5.0" }],
+        body: "",
+        bodyEncoding: "none",
+        contentType: "application/json",
+        sourceIP: `192.168.1.${100 + ipIndex}`,
+        country: "US",
+      });
+    }
+
+    const results = evaluateBatch(requests, activeWAF, {
+      ipSets, regexPatternSets,
+      requestInterval: intervalMs,
+    });
+
+    let allowed = 0, blocked = 0, triggeredAt: number | null = null;
+    results.forEach((r, i) => {
+      if (r.finalAction === "BLOCK") {
+        blocked++;
+        if (triggeredAt === null) triggeredAt = i + 1;
+      } else {
+        allowed++;
+      }
+    });
+
+    setFloodResults({ total: results.length, allowed, blocked, triggeredAt });
   };
 
   const addHeader = () => setCurrentRequest({ ...currentRequest, headers: [...(currentRequest.headers || []), { name: "", value: "" }] });
@@ -234,9 +277,23 @@ export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate }
               <div>From <span className="text-white font-mono">{floodConfig.sourceIPs}</span> unique IP{floodConfig.sourceIPs > 1 ? "s" : ""}</div>
               <div>Rate per IP: <span className="text-white font-mono">{Math.ceil(floodConfig.rps / floodConfig.sourceIPs)}</span> req/sec = <span className="text-white font-mono">{Math.ceil((floodConfig.rps / floodConfig.sourceIPs) * 300)}</span> per 5min window</div>
             </div>
-            <Button onClick={onSimulate} disabled={!activeWAF} size="sm" className="w-full bg-orange-600 hover:bg-orange-700">
-              🌊 Run Flood Simulation
+            <Button onClick={runFlood} disabled={!activeWAF} size="sm" className="w-full bg-orange-600 hover:bg-orange-700">
+              Run Flood Simulation
             </Button>
+            {floodResults && (
+              <div className="bg-gray-800 rounded p-2 text-[11px] space-y-1">
+                <div className="flex gap-3 font-medium">
+                  <span className="text-green-400">Allowed: {floodResults.allowed}</span>
+                  <span className="text-red-400">Blocked: {floodResults.blocked}</span>
+                </div>
+                <div className="text-gray-400">Total: {floodResults.total} requests</div>
+                {floodResults.triggeredAt !== null ? (
+                  <div className="text-orange-400">Rate limit triggered at request #{floodResults.triggeredAt}</div>
+                ) : (
+                  <div className="text-gray-500">Rate limit not triggered</div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
