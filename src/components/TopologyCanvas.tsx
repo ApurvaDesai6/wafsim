@@ -271,6 +271,7 @@ interface TopologyCanvasInnerProps {
   isAnimating?: boolean;
   bottomPanelOpen?: boolean;
   wafResults?: Map<string, string>;
+  trafficEdges?: Map<string, "passed" | "blocked">;
 }
 
 const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
@@ -282,6 +283,7 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
   isAnimating,
   bottomPanelOpen,
   wafResults,
+  trafficEdges,
 }) => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition } = useReactFlow();
@@ -353,12 +355,18 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
 
       let strokeColor = isWAFConnection ? "#dc2626" : "#4b5563";
       const isSelected = selectedEdgeId === edge.id;
+      const trafficStatus = !isWAFConnection ? trafficEdges?.get(edge.id) : null;
+
       if (isSelected) {
         strokeColor = "#fbbf24";
       } else if (thisWafResult) {
         strokeColor = thisWafResult === 'BLOCK' ? '#ef4444' : thisWafResult === 'ALLOW' ? '#22c55e' : '#eab308';
       } else if (isEvalEdge) {
         strokeColor = evaluationStatus === 'blocked' ? '#ef4444' : evaluationStatus === 'allowed' ? '#22c55e' : '#eab308';
+      } else if (trafficStatus === "passed") {
+        strokeColor = "#22c55e"; // Green for traffic that passed
+      } else if (trafficStatus === "blocked") {
+        strokeColor = "#ef4444"; // Red for traffic that was blocked upstream
       }
 
       const edgeLabel = thisWafResult || (isEvalEdge ? evaluationStatus?.toUpperCase() : undefined);
@@ -371,7 +379,7 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
         sourceHandle: isWAFConnection ? "waf-out" : "traffic-out",
         targetHandle: isWAFConnection ? "waf-in" : "traffic-in",
         type: isWAFConnection ? "straight" : "smoothstep",
-        animated: showTraffic || !!thisWafResult || !!isEvalEdge,
+        animated: showTraffic || !!thisWafResult || !!isEvalEdge || !!trafficStatus,
         selected: selectedEdgeId === edge.id,
         interactionWidth: 20,
         style: {
@@ -387,7 +395,7 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
         labelBgBorderRadius: 4,
       };
     });
-  }, [storeEdges, storeNodes, selectedEdgeId, evaluationStatus, evaluatedWAFId, isAnimating]);
+  }, [storeEdges, storeNodes, selectedEdgeId, evaluationStatus, evaluatedWAFId, isAnimating, wafResults, trafficEdges]);
 
   const [nodes, setLocalNodes, onNodesChange] = useNodesState(reactFlowNodes);
   const [edges, setLocalEdges, onEdgesChange] = useEdgesState(reactFlowEdges);
@@ -760,6 +768,7 @@ interface TopologyCanvasProps {
   isAnimating?: boolean;
   bottomPanelOpen?: boolean;
   wafResults?: Map<string, string>;
+  trafficEdges?: Map<string, "passed" | "blocked">;
 }
 
 export const TopologyCanvas: React.FC<TopologyCanvasProps> = (props) => {

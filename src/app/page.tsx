@@ -57,6 +57,7 @@ export default function WAFSimPage() {
   const [sampledRequests, setSampledRequests] = useState<SampledRequest[]>([]);
   const [isAnimating, setIsAnimating] = useState(false);
   const [wafResults, setWafResults] = useState<Map<string, string>>(new Map()); // wafId -> action
+  const [trafficEdges, setTrafficEdges] = useState<Map<string, "passed" | "blocked">>(new Map()); // edgeId -> status
 
   // Only show WAF config when a WAF is explicitly selected (not fallback)
   const activeWAF = wafs.find(w => w.id === selectedWAFId) || null;
@@ -136,6 +137,31 @@ export default function WAFSimPage() {
       const resultsMap = new Map<string, string>();
       pathResults.forEach(pr => resultsMap.set(pr.wafId, pr.result.finalAction));
       setWafResults(resultsMap);
+
+      // Compute traffic flow: which edges did traffic pass through?
+      const flowMap = new Map<string, "passed" | "blocked">();
+      // Find which resources are protected by which WAFs
+      const blockedResources = new Set<string>();
+      for (const pr of pathResults) {
+        if (pr.result.finalAction === "BLOCK") {
+          // Find resources this WAF protects
+          edges.filter(e => e.wafId === pr.wafId).forEach(e => blockedResources.add(e.target));
+        }
+      }
+      // Mark traffic edges: edges leading to blocked resources are "blocked" after the WAF
+      // Edges before are "passed"
+      for (const edge of edges) {
+        if (edge.wafId) continue; // WAF edges handled separately
+        const sourceNode = nodes.find(n => n.id === edge.source);
+        if (sourceNode?.type === "WAF") continue; // Skip WAF connection edges
+        // If target is blocked by a WAF, downstream edges from that target are blocked
+        if (blockedResources.has(edge.source)) {
+          flowMap.set(edge.id, "blocked");
+        } else {
+          flowMap.set(edge.id, "passed");
+        }
+      }
+      setTrafficEdges(flowMap);
       setIsSimulating(false);
 
       setSampledRequests(prev => [{
@@ -219,6 +245,7 @@ export default function WAFSimPage() {
               isAnimating={isAnimating}
               bottomPanelOpen={!!bottomTab}
               wafResults={wafResults}
+              trafficEdges={trafficEdges}
             />
           </div>
 

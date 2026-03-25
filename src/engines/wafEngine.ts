@@ -192,10 +192,14 @@ export function evaluateBatch(
   const startTime = options.startTime || Date.now();
   const interval = options.requestInterval || 100; // 100ms default
 
-  // Initialize rate tracking
+  // Initialize rate tracking with window large enough for any rule
+  const maxWindow = webACL.rules
+    .filter(r => r.statement.type === "RateBasedStatement")
+    .reduce((max, r) => Math.max(max, ((r.statement as any).evaluationWindowSec || 300) * 1000), 300000);
+
   const rateTracking = {
     requestCounts: new Map<string, number[]>(),
-    windowMs: 60000, // 1 minute window
+    windowMs: maxWindow,
   };
 
   for (let i = 0; i < requests.length; i++) {
