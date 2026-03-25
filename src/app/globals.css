@@ -130,3 +130,14 @@
 .react-flow__edge.selected marker {
   fill: #fbbf24 !important;
 }
+
+/* MiniMap: compact by default, expand on hover */
+.minimap-compact {
+  transition: width 0.2s ease, height 0.2s ease, opacity 0.2s ease;
+  opacity: 0.5;
+}
+.minimap-compact:hover {
+  width: 200px !important;
+  height: 120px !important;
+  opacity: 1;
+}

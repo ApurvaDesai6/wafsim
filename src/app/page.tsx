@@ -205,12 +205,12 @@ export default function WAFSimPage() {
                 <button key={tab} onClick={() => setBottomTab(bottomTab === tab ? null : tab)}
                   className={`px-3 py-1.5 text-sm font-medium rounded transition-colors ${bottomTab === tab ? "bg-gray-700 text-white" : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"}`}>
                   {tab === "simulator" && "⚡ Simulate"}
-                  {tab === "results" && <>📊 Results {evaluationResult && <Badge className={`ml-1.5 text-[10px] px-1.5 py-0 ${evaluationResult.finalAction === "BLOCK" ? "bg-red-600" : evaluationResult.finalAction === "ALLOW" ? "bg-green-600" : "bg-yellow-600"}`}>{evaluationResult.finalAction}</Badge>}</>}
-                  {tab === "logs" && <>📋 Sampled Requests {sampledRequests.length > 0 && <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0">{sampledRequests.length}</Badge>}</>}
+                  {tab === "results" && <>Results {evaluationResult && <Badge className={`ml-1.5 text-[10px] px-1.5 py-0 ${evaluationResult.finalAction === "BLOCK" ? "bg-red-600" : evaluationResult.finalAction === "ALLOW" ? "bg-green-600" : "bg-yellow-600"}`}>{evaluationResult.finalAction}</Badge>}</>}
+                  {tab === "logs" && <>Sampled Requests {sampledRequests.length > 0 && <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0">{sampledRequests.length}</Badge>}</>}
                 </button>
               ))}
               <button disabled className="px-3 py-1.5 text-sm rounded text-gray-600 cursor-not-allowed" title="Coming soon: guided false positive exception workflow">
-                🛠️ False Positive Exceptions <Badge variant="outline" className="text-[9px] px-1 text-gray-600 border-gray-700 ml-1">Soon</Badge>
+                False Positive Exceptions <Badge variant="outline" className="text-[9px] px-1 text-gray-600 border-gray-700 ml-1">Soon</Badge>
               </button>
               {bottomTab && (
                 <button onClick={() => setBottomTab(null)} className="text-gray-500 hover:text-gray-300 ml-1" title="Close panel">

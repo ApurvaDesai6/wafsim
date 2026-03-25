@@ -80,7 +80,7 @@ export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate }
     <div className="h-full flex text-white text-xs">
       {/* Section tabs (vertical) */}
       <div className="w-20 bg-gray-900 border-r border-gray-800 flex flex-col shrink-0">
-        {([["form", "📝 Form"], ["presets", "⚡ Presets"], ["batch", "🧪 Batch"], ["flood", "🌊 Flood/Rate"]] as const).map(([key, label]) => (
+        {([["form", "📝 Form"], ["presets", "⚡ Presets"], ["batch", "🧪 Batch"], ["flood", "Flood/Rate"]] as const).map(([key, label]) => (
           <button key={key} onClick={() => setActiveSection(key)}
             className={`px-2 py-2 text-[11px] text-left border-b border-gray-800 transition-colors ${activeSection === key ? "bg-gray-800 text-white font-medium" : "text-gray-500 hover:text-gray-300 hover:bg-gray-800/50"}`}>
             {label}
