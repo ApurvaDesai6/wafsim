@@ -131,13 +131,11 @@
   fill: #fbbf24 !important;
 }
 
-/* MiniMap: compact by default, expand on hover */
-.minimap-compact {
-  transition: width 0.2s ease, height 0.2s ease, opacity 0.2s ease;
-  opacity: 0.5;
+/* MiniMap: subtle by default */
+.react-flow__minimap {
+  opacity: 0.4;
+  transition: opacity 0.2s;
 }
-.minimap-compact:hover {
-  width: 200px !important;
-  height: 120px !important;
+.react-flow__minimap:hover {
   opacity: 1;
 }

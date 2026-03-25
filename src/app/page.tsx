@@ -49,6 +49,7 @@ export default function WAFSimPage() {
   const [showResources, setShowResources] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [showRuleBuilder, setShowRuleBuilder] = useState(false);
+  const [rightPanelOpen, setRightPanelOpen] = useState(true);
   const [ruleBuilderMode, setRuleBuilderMode] = useState<"create" | "edit">("create");
   const [editingRule, setEditingRule] = useState<Rule | null>(null);
   const [bottomTab, setBottomTab] = useState<string | null>(null);
@@ -62,32 +63,45 @@ export default function WAFSimPage() {
   // When node is clicked, auto-select its WAF if it has one
   useEffect(() => {
     if (!selectedNodeId) return;
-    // If the node IS a WAF node, select that WAF directly
     const node = nodes.find(n => n.id === selectedNodeId);
-    if (node?.type === "WAF" && node.wafId) { selectWAF(node.wafId); return; }
-    // Otherwise check if the node has a WAF on its incoming edge
+    if (node?.type === "WAF" && node.wafId) { selectWAF(node.wafId); setRightPanelOpen(true); return; }
     const edge = edges.find(e => e.target === selectedNodeId && e.wafId);
-    if (edge?.wafId) selectWAF(edge.wafId);
+    if (edge?.wafId) { selectWAF(edge.wafId); setRightPanelOpen(true); }
   }, [selectedNodeId]);
 
-  // Attach WAF to selected node
+  // Attach WAF to selected node - creates a visible WAF node and connects it
   const handleAttachWAF = useCallback(() => {
     if (!selectedNodeId) return;
     const node = nodes.find(n => n.id === selectedNodeId);
     if (!node?.wafAttachable) return;
-    const edge = edges.find(e => e.target === selectedNodeId && !e.wafId);
-    if (!edge) return;
-    createWAFOnEdge(edge.id, {
+
+    // Create the WAF
+    const wafId = store.createWAF({
       name: `WAF-${node.label}`,
       description: `Protecting ${node.label}`,
-      scope: node.scope || "REGIONAL",
+      scope: (node.scope || "REGIONAL") as "CLOUDFRONT" | "REGIONAL",
       defaultAction: "ALLOW",
       rules: [],
       visibilityConfig: { sampledRequestsEnabled: true, cloudWatchMetricsEnabled: true, metricName: "WAFMetric" },
       capacity: 0,
     });
-    toast.success(`WAF attached to ${node.label}`);
-  }, [selectedNodeId, nodes, edges, createWAFOnEdge]);
+
+    // Create a WAF node positioned above the resource
+    const wafNodeId = store.addNode({
+      type: "WAF",
+      label: "WAF WebACL",
+      icon: "🛡️",
+      wafAttachable: false,
+      wafId,
+      position: { x: node.position.x, y: node.position.y - 100 },
+    });
+
+    // Connect WAF node to resource
+    store.addEdge({ source: wafNodeId, target: selectedNodeId, wafId });
+
+    selectWAF(wafId);
+    toast.success(`WAF created and attached to ${node.label}`);
+  }, [selectedNodeId, nodes, store, selectWAF]);
 
   // Run simulation through ALL WAFs in the topology
   const handleSimulate = useCallback(() => {
@@ -159,7 +173,7 @@ export default function WAFSimPage() {
   // Determine right panel state
   const selectedNode = nodes.find(n => n.id === selectedNodeId);
   const nodeHasWAF = selectedNode ? edges.some(e => e.target === selectedNodeId && e.wafId) : false;
-  const canAttach = selectedNode?.wafAttachable && !nodeHasWAF && edges.some(e => e.target === selectedNodeId && !e.wafId);
+  const canAttach = selectedNode?.wafAttachable && !nodeHasWAF;
 
   return (
     <div className="h-screen flex flex-col bg-gray-950 text-white overflow-hidden">
@@ -297,8 +311,12 @@ export default function WAFSimPage() {
           </div>
         </div>
 
-        {/* Right Panel: WAF Config */}
-        <div className="w-full md:w-[380px] border-t md:border-t-0 md:border-l border-gray-700 flex flex-col shrink-0 overflow-hidden max-h-[40vh] md:max-h-none">
+        {/* Right Panel: WAF Config - collapsible */}
+        {rightPanelOpen ? (
+        <div className="w-full md:w-[380px] border-t md:border-t-0 md:border-l border-gray-700 flex flex-col shrink-0 overflow-hidden max-h-[40vh] md:max-h-none relative">
+          <button onClick={() => setRightPanelOpen(false)} className="absolute top-2 right-2 z-10 text-gray-500 hover:text-gray-300" title="Hide panel">
+            <X className="w-4 h-4" />
+          </button>
           {activeWAF ? (
             <WAFConfigPanel wafId={activeWAF.id} onEditRule={handleEditRule} onCreateRule={handleCreateRule} />
           ) : selectedNode?.wafAttachable ? (
@@ -324,6 +342,11 @@ export default function WAFSimPage() {
             </div>
           )}
         </div>
+        ) : (
+          <button onClick={() => setRightPanelOpen(true)} className="w-8 border-l border-gray-700 bg-gray-900 flex items-center justify-center shrink-0 hover:bg-gray-800 text-gray-500 hover:text-gray-300" title="Show WAF config panel">
+            <Shield className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       {/* Rule Builder */}

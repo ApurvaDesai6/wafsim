@@ -596,8 +596,7 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
         <Background color="#374151" gap={20} />
         <Controls className="!bg-gray-800 !text-white rounded !border-gray-700" />
         <MiniMap
-          className="!bg-gray-800 rounded !border-gray-700 minimap-compact"
-          style={{ width: 100, height: 60 }}
+          className="!bg-gray-800 rounded !border-gray-700"
           nodeColor={(node) => {
             switch (node.data?.type) {
               case "INTERNET":
