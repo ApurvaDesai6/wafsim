@@ -242,7 +242,10 @@ export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate }
         )}
         {activeSection === "flood" && (
           <div className="space-y-3">
-            <p className="text-gray-400 text-[11px]">Simulate volumetric attacks and rate-based rule behavior.</p>
+            <div className="flex items-center gap-2">
+              <p className="text-gray-400 text-[11px] flex-1">Simulate volumetric attacks and rate-based rule behavior.</p>
+              <Badge variant="outline" className="text-[9px] text-yellow-500 border-yellow-600 shrink-0">In Development</Badge>
+            </div>
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <Label className="text-[10px] text-gray-500 uppercase">Requests/sec</Label>
