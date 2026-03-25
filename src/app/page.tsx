@@ -140,24 +140,43 @@ export default function WAFSimPage() {
 
       // Compute traffic flow: which edges did traffic pass through?
       const flowMap = new Map<string, "passed" | "blocked">();
-      // Find which resources are protected by which WAFs
-      const blockedResources = new Set<string>();
+      
+      // Find which resources are directly protected by blocking WAFs
+      const blockedAtNodes = new Set<string>();
       for (const pr of pathResults) {
         if (pr.result.finalAction === "BLOCK") {
-          // Find resources this WAF protects
-          edges.filter(e => e.wafId === pr.wafId).forEach(e => blockedResources.add(e.target));
+          edges.filter(e => e.wafId === pr.wafId).forEach(e => blockedAtNodes.add(e.target));
         }
       }
-      // Mark traffic edges: edges leading to blocked resources are "blocked" after the WAF
-      // Edges before are "passed"
+
+      // Propagate: find ALL nodes downstream of blocked nodes (BFS)
+      const allBlockedNodes = new Set<string>(blockedAtNodes);
+      const queue = [...blockedAtNodes];
+      while (queue.length > 0) {
+        const nodeId = queue.shift()!;
+        // Find all traffic edges going OUT of this node
+        for (const edge of edges) {
+          if (edge.wafId) continue; // skip WAF edges
+          const srcNode = nodes.find(n => n.id === edge.source);
+          if (srcNode?.type === "WAF") continue;
+          if (edge.source === nodeId && !allBlockedNodes.has(edge.target)) {
+            allBlockedNodes.add(edge.target);
+            queue.push(edge.target);
+          }
+        }
+      }
+
+      // Mark all traffic edges
       for (const edge of edges) {
-        if (edge.wafId) continue; // WAF edges handled separately
-        const sourceNode = nodes.find(n => n.id === edge.source);
-        if (sourceNode?.type === "WAF") continue; // Skip WAF connection edges
-        // If target is blocked by a WAF, downstream edges from that target are blocked
-        if (blockedResources.has(edge.source)) {
+        if (edge.wafId) continue;
+        const srcNode = nodes.find(n => n.id === edge.source);
+        if (srcNode?.type === "WAF") continue;
+        
+        if (allBlockedNodes.has(edge.source)) {
+          // Source is at or beyond the block point: no traffic flows
           flowMap.set(edge.id, "blocked");
         } else {
+          // Traffic flows through this edge (even if target is the blocked node, traffic reached it)
           flowMap.set(edge.id, "passed");
         }
       }
