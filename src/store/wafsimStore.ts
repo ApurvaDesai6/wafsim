@@ -3,6 +3,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { importWebACLJson } from "@/engines/importEngine";
 import {
   WebACL,
   IPSet,
@@ -109,6 +110,7 @@ interface WAFSimState {
   // Actions - Import/Export
   exportState: () => string;
   importState: (json: string) => void;
+  importWebACL: (json: string) => { success: boolean; errors: string[]; warnings: string[] };
   resetState: () => void;
 }
 
@@ -472,6 +474,16 @@ export const useWAFSimStore = create<WAFSimState>()(
         } catch (e) {
           console.error("Failed to import state:", e);
         }
+      },
+
+      importWebACL: (json) => {
+        const result = importWebACLJson(json);
+        if (result.webACL) {
+          set((state) => ({
+            wafs: [...state.wafs, result.webACL!],
+          }));
+        }
+        return { success: result.success, errors: result.errors, warnings: result.warnings };
       },
 
       resetState: () => {

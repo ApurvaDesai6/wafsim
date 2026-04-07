@@ -41,7 +41,7 @@ export default function WAFSimPage() {
     currentRequest, setCurrentRequest,
     setEvaluationResultWithWAF, clearEvaluationResult,
     createWAFOnEdge, selectWAF, selectNode,
-    exportState, importState, resetState,
+    exportState, importState, importWebACL, resetState,
     addRuleToWAF, updateRuleInWAF, setIsSimulating, isSimulating,
   } = store;
 
@@ -245,6 +245,7 @@ export default function WAFSimPage() {
           </a>
           <Button variant="ghost" size="sm" onClick={() => setShowResources(true)} className="h-7 text-xs text-gray-400 hidden md:inline-flex"><Settings className="w-3 h-3 mr-1" />Resources</Button>
           <Button variant="ghost" size="sm" onClick={() => { const i = document.createElement("input"); i.type = "file"; i.accept = ".json"; i.onchange = (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) { const r = new FileReader(); r.onload = (e) => { try { importState(e.target?.result as string); toast.success("Imported"); } catch { toast.error("Failed"); } }; r.readAsText(f); } }; i.click(); }} className="h-7 text-xs text-gray-400 hidden sm:inline-flex"><Upload className="w-3 h-3 mr-1" />Import</Button>
+          <Button variant="ghost" size="sm" onClick={() => { const i = document.createElement("input"); i.type = "file"; i.accept = ".json"; i.onchange = (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) { const r = new FileReader(); r.onload = (ev) => { const result = importWebACL(ev.target?.result as string); if (result.success) { toast.success(`Imported WebACL${result.warnings.length ? ` (${result.warnings.length} warnings)` : ""}`); } else { toast.error(result.errors[0] || "Import failed"); } if (result.warnings.length) result.warnings.forEach(w => console.warn("Import warning:", w)); }; r.readAsText(f); } }; i.click(); }} className="h-7 text-xs text-gray-400 hidden sm:inline-flex"><Shield className="w-3 h-3 mr-1" />Import WebACL</Button>
           <Button variant="ghost" size="sm" onClick={() => setShowExport(true)} className="h-7 text-xs text-gray-400 hidden sm:inline-flex"><Download className="w-3 h-3 mr-1" />Export</Button>
           <Button variant="ghost" size="sm" onClick={() => { if (confirm("Reset everything?")) { resetState(); setSampledRequests([]); toast.success("Reset"); } }} className="h-7 text-xs text-red-400"><Trash2 className="w-3 h-3" /></Button>
         </div>
