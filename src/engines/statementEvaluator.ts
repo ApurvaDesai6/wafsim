@@ -696,7 +696,7 @@ function evaluateRegexMatch(
   const transformedContent = applyTransformations(fieldContent, statement.textTransformations as Statement extends infer S ? S extends { type: "RegexMatchStatement" } ? S["textTransformations"] : never : never);
 
   try {
-    const regex = new RegExp(statement.regexString, "i");
+    const regex = new RegExp(statement.regexString);
     const matched = regex.test(transformedContent);
 
     return {
@@ -738,7 +738,7 @@ function evaluateRegexPatternSetReference(
   // Check each pattern in the set
   for (const pattern of patternSet.regularExpressionList) {
     try {
-      const regex = new RegExp(pattern, "i");
+      const regex = new RegExp(pattern);
       if (regex.test(transformedContent)) {
         return {
           matched: true,
@@ -776,7 +776,8 @@ function evaluateSizeConstraint(
   const { content: fieldContent } = extractField(context.request, statement.fieldToMatch as Statement extends infer S ? S extends { type: "SizeConstraintStatement" } ? S["fieldToMatch"] : never : never);
   const transformedContent = applyTransformations(fieldContent, statement.textTransformations as Statement extends infer S ? S extends { type: "SizeConstraintStatement" } ? S["textTransformations"] : never : never);
 
-  const size = transformedContent.length;
+  // AWS WAF measures size in bytes, not characters
+  const size = new TextEncoder().encode(transformedContent).length;
   let matched = false;
   let comparisonDesc = "";
 
