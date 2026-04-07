@@ -55,7 +55,7 @@ export default function WAFSimPage() {
   const [ruleBuilderMode, setRuleBuilderMode] = useState<"create" | "edit">("create");
   const [editingRule, setEditingRule] = useState<Rule | null>(null);
   const [bottomTab, setBottomTab] = useState<string | null>(null);
-  const [bottomHeight, setBottomHeight] = useState(300);
+  const [bottomHeight, setBottomHeight] = useState(260);
   const [sampledRequests, setSampledRequests] = useState<SampledRequest[]>([]);
   const [isAnimating, setIsAnimating] = useState(false);
   const [wafResults, setWafResults] = useState<Map<string, string>>(new Map());

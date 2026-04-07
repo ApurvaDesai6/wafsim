@@ -74,62 +74,42 @@ export const EvaluationTrace: React.FC<EvaluationTraceProps> = ({ result }) => {
   const labelsCount = result.labelsApplied.length;
 
   return (
-    <div className="h-full flex flex-col bg-gray-900 text-white">
+    <div className="h-full flex flex-col bg-gray-900 text-white text-xs">
       {/* Header */}
-      <div className="p-4 border-b border-gray-700">
-        <h2 className="text-lg font-semibold flex items-center gap-2">
-          <Zap className="w-5 h-5 text-yellow-400" />
-          Evaluation Trace
-        </h2>
-
+      <div className="px-3 py-2 border-b border-gray-700 shrink-0">
         {/* Final Result Banner */}
         <div
           className={cn(
-            "mt-3 p-3 rounded-lg border-2 flex items-center justify-between",
+            "p-2 rounded-lg border flex items-center justify-between",
             getActionColor(result.finalAction)
           )}
         >
           <div className="flex items-center gap-2">
             {getActionIcon(result.finalAction)}
-            <span className="font-bold text-lg">{result.finalAction}</span>
+            <span className="font-bold text-sm">{result.finalAction}</span>
+            {result.terminatingRule && (
+              <span className="text-[11px] text-gray-400">by {result.terminatingRule.rule.name}</span>
+            )}
           </div>
-          {result.terminatingRule && (
-            <Badge variant="outline" className="text-xs">
-              by: {result.terminatingRule.rule.name}
-            </Badge>
-          )}
-        </div>
-
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-2 mt-3">
-          <div className="text-center p-2 bg-gray-800 rounded">
-            <div className="text-2xl font-bold">{result.ruleTrace.length}</div>
-            <div className="text-xs text-gray-400">Evaluated</div>
-          </div>
-          <div className="text-center p-2 bg-gray-800 rounded">
-            <div className="text-2xl font-bold text-yellow-400">{matchedCount}</div>
-            <div className="text-xs text-gray-400">Matched</div>
-          </div>
-          <div className="text-center p-2 bg-gray-800 rounded">
-            <div className="text-2xl font-bold text-blue-400">{labelsCount}</div>
-            <div className="text-xs text-gray-400">Labels</div>
+          <div className="flex items-center gap-3 text-[11px]">
+            <span>{result.ruleTrace.length} evaluated</span>
+            <span className="text-yellow-400">{matchedCount} matched</span>
+            <span className="text-blue-400">{labelsCount} labels</span>
           </div>
         </div>
 
         {/* Approximation Warning */}
         {result.approximatedManagedRules && (
-          <div className="mt-3 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded flex items-center gap-2 text-sm">
-            <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0" />
-            <span className="text-yellow-400">
-              Managed rule behavior is approximated based on documentation
-            </span>
+          <div className="mt-1.5 px-2 py-1 bg-yellow-500/10 border border-yellow-500/30 rounded flex items-center gap-1.5 text-[10px]">
+            <AlertTriangle className="w-3 h-3 text-yellow-400 flex-shrink-0" />
+            <span className="text-yellow-400">Managed rule behavior is approximated</span>
           </div>
         )}
       </div>
 
       {/* Rules Timeline */}
       <ScrollArea className="flex-1">
-        <div className="p-4 space-y-2">
+        <div className="p-2 space-y-1">
           {result.ruleTrace.map((trace, index) => {
             // v2.25: Calculate label propagation context
             const labelsAvailableBefore = result.ruleTrace
@@ -149,7 +129,7 @@ export const EvaluationTrace: React.FC<EvaluationTraceProps> = ({ result }) => {
               )}
               onClick={() => toggleRule(trace.ruleName)}
             >
-              <CardHeader className="p-3">
+              <CardHeader className="px-2.5 py-1.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className="text-xs">
@@ -187,7 +167,7 @@ export const EvaluationTrace: React.FC<EvaluationTraceProps> = ({ result }) => {
               </CardHeader>
 
               {expandedRules.has(trace.ruleName) && (
-                <CardContent className="px-3 pb-3 pt-0 space-y-3">
+                <CardContent className="px-2.5 pb-2 pt-0 space-y-2">
                   {/* Label Propagation Context */}
                   {labelsAvailableBefore.length > 0 && (
                     <div>
@@ -275,14 +255,11 @@ export const EvaluationTrace: React.FC<EvaluationTraceProps> = ({ result }) => {
 
       {/* Labels Applied */}
       {result.labelsApplied.length > 0 && (
-        <div className="p-4 border-t border-gray-700">
-          <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
-            <Tag className="w-4 h-4" />
-            Labels Applied
-          </h3>
+        <div className="px-2.5 py-1.5 border-t border-gray-700 shrink-0">
           <div className="flex flex-wrap gap-1">
+            <span className="text-[10px] text-gray-500 mr-1">Labels:</span>
             {result.labelsApplied.map((label) => (
-              <Badge key={label} variant="outline" className="text-xs">
+              <Badge key={label} variant="outline" className="text-[9px] px-1 py-0">
                 {label}
               </Badge>
             ))}
