@@ -10,6 +10,7 @@ import {
   PositionalConstraint,
   TextTransformationType,
 } from "@/lib/types";
+import { getManagedRuleGroup } from "@/lib/managedRuleGroups";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -53,6 +54,7 @@ const STATEMENT_TYPES = [
   { value: "GeoMatchStatement", label: "Geo Match", description: "Match by country/region", doc: "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-geo-match.html" },
   { value: "IPSetReferenceStatement", label: "IP Set", description: "Match IPs from a set", doc: "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-ipset-match.html" },
   { value: "LabelMatchStatement", label: "Label Match", description: "Match labels from other rules", doc: "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-label-match-statement.html" },
+  { value: "ManagedRuleGroupStatement", label: "Managed Rule Group", description: "AWS managed rule group", doc: "https://docs.aws.amazon.com/waf/latest/developerguide/aws-managed-rule-groups-list.html" },
   { value: "RateBasedStatement", label: "Rate Based", description: "Rate limiting rules", doc: "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-rate-based.html" },
   { value: "RegexMatchStatement", label: "Regex Match", description: "Match regex patterns", doc: "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-regex-match.html" },
   { value: "RegexPatternSetReferenceStatement", label: "Regex Pattern Set", description: "Match against a regex pattern set", doc: "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-regex-pattern-set-match.html" },
@@ -224,6 +226,18 @@ export const RuleBuilder: React.FC<RuleBuilderProps> = ({ rule, onSave, onCancel
       : "LOW"
   );
 
+  // Managed Rule Group state
+  const mrgStmt = rule?.statement?.type === "ManagedRuleGroupStatement" ? rule.statement as import("@/lib/types").ManagedRuleGroupStatement : null;
+  const [mrgName, setMrgName] = useState(mrgStmt?.name || "AWSManagedRulesCommonRuleSet");
+  const [mrgExcludedRules, setMrgExcludedRules] = useState<string[]>(mrgStmt?.excludedRules || []);
+  const [mrgOverrides, setMrgOverrides] = useState<Array<{ name: string; actionToUse: string }>>(
+    mrgStmt?.ruleActionOverrides?.map(o => ({ name: o.name, actionToUse: o.actionToUse })) || []
+  );
+  const [mrgBotInspection, setMrgBotInspection] = useState<"COMMON" | "TARGETED">(
+    mrgStmt?.managedRuleGroupConfigs?.[0]?.awsManagedRulesBotControlRuleSet?.inspectionLevel || "COMMON"
+  );
+  const [mrgVersion, setMrgVersion] = useState(mrgStmt?.version || "");
+
   // IP Set state
   const [ipSetArn, setIpSetArn] = useState(
     rule?.statement?.type === "IPSetReferenceStatement"
@@ -326,6 +340,22 @@ export const RuleBuilder: React.FC<RuleBuilderProps> = ({ rule, onSave, onCancel
           scope: labelScope,
         } as Statement;
 
+      case "ManagedRuleGroupStatement": {
+        const configs: Record<string, unknown>[] = [];
+        if (mrgName === "AWSManagedRulesBotControlRuleSet") {
+          configs.push({ awsManagedRulesBotControlRuleSet: { inspectionLevel: mrgBotInspection } });
+        }
+        return {
+          type: "ManagedRuleGroupStatement",
+          vendorName: "AWS",
+          name: mrgName,
+          ...(mrgVersion && { version: mrgVersion }),
+          ...(mrgExcludedRules.length > 0 && { excludedRules: mrgExcludedRules }),
+          ...(mrgOverrides.length > 0 && { ruleActionOverrides: mrgOverrides.map(o => ({ name: o.name, actionToUse: o.actionToUse })) }),
+          ...(configs.length > 0 && { managedRuleGroupConfigs: configs }),
+        } as Statement;
+      }
+
       case "RateBasedStatement":
         const scopeDown = scopeDownType !== "NONE" ? buildScopeDownStatement() : undefined;
         return {
@@ -417,6 +447,7 @@ export const RuleBuilder: React.FC<RuleBuilderProps> = ({ rule, onSave, onCancel
         metricName: name.replace(/[^a-zA-Z0-9]/g, ""),
       },
       ruleLabels,
+      ...(statementType === "ManagedRuleGroupStatement" && { overrideAction: rule?.overrideAction || "NONE" }),
     };
 
     onSave(newRule);
@@ -816,6 +847,138 @@ export const RuleBuilder: React.FC<RuleBuilderProps> = ({ rule, onSave, onCancel
             </div>
           </div>
         );
+
+      case "ManagedRuleGroupStatement": {
+        const mrgData = getManagedRuleGroup(mrgName);
+        const MRG_OPTIONS = [
+          { value: "AWSManagedRulesCommonRuleSet", label: "Core Rule Set", wcu: 700, fee: false },
+          { value: "AWSManagedRulesKnownBadInputsRuleSet", label: "Known Bad Inputs", wcu: 200, fee: false },
+          { value: "AWSManagedRulesSQLiRuleSet", label: "SQL Injection", wcu: 200, fee: false },
+          { value: "AWSManagedRulesLinuxRuleSet", label: "Linux OS", wcu: 200, fee: false },
+          { value: "AWSManagedRulesUnixRuleSet", label: "POSIX OS", wcu: 100, fee: false },
+          { value: "AWSManagedRulesWindowsRuleSet", label: "Windows OS", wcu: 200, fee: false },
+          { value: "AWSManagedRulesPHPRuleSet", label: "PHP Application", wcu: 100, fee: false },
+          { value: "AWSManagedRulesWordPressRuleSet", label: "WordPress", wcu: 100, fee: false },
+          { value: "AWSManagedRulesAdminProtectionRuleSet", label: "Admin Protection", wcu: 100, fee: false },
+          { value: "AWSManagedRulesAmazonIpReputationList", label: "IP Reputation", wcu: 25, fee: false },
+          { value: "AWSManagedRulesAnonymousIpList", label: "Anonymous IP", wcu: 50, fee: false },
+          { value: "AWSManagedRulesBotControlRuleSet", label: "Bot Control", wcu: 50, fee: true },
+          { value: "AWSManagedRulesATPRuleSet", label: "Account Takeover", wcu: 50, fee: true },
+          { value: "AWSManagedRulesACFPRuleSet", label: "Fraud Prevention", wcu: 50, fee: true },
+        ];
+        return (
+          <div className="space-y-4">
+            {/* Rule Group Selector */}
+            <div>
+              <Label className="text-sm text-gray-400">Managed Rule Group</Label>
+              <Select value={mrgName} onValueChange={setMrgName}>
+                <SelectTrigger className="bg-gray-800 border-gray-700">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-64">
+                  {MRG_OPTIONS.map(opt => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      <div className="flex items-center gap-2">
+                        <span>{opt.label}</span>
+                        <span className="text-[10px] text-gray-500 font-mono">{opt.wcu} WCU</span>
+                        {opt.fee && <span className="text-[10px] text-yellow-400">💰</span>}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {MRG_OPTIONS.find(o => o.value === mrgName)?.fee && (
+                <p className="text-[11px] text-yellow-400 mt-1">⚠ This rule group incurs additional per-request fees beyond standard WAF pricing</p>
+              )}
+            </div>
+
+            {/* Description */}
+            {mrgData && (
+              <div className="p-2 bg-gray-800 rounded text-xs text-gray-400">{mrgData.description}</div>
+            )}
+
+            {/* Bot Control specific: Inspection Level */}
+            {mrgName === "AWSManagedRulesBotControlRuleSet" && (
+              <div>
+                <Label className="text-sm text-gray-400">Inspection Level</Label>
+                <Select value={mrgBotInspection} onValueChange={(v) => setMrgBotInspection(v as "COMMON" | "TARGETED")}>
+                  <SelectTrigger className="bg-gray-800 border-gray-700">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="COMMON">Common — Verifies bot identity via IP and headers (lower cost)</SelectItem>
+                    <SelectItem value="TARGETED">Targeted — Adds browser fingerprinting and ML detection (higher cost)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Version */}
+            <div>
+              <Label className="text-sm text-gray-400">Version (optional)</Label>
+              <Input value={mrgVersion} onChange={(e) => setMrgVersion(e.target.value)} placeholder="Leave blank for latest" className="bg-gray-800 border-gray-700" />
+            </div>
+
+            {/* Sub-rules with overrides */}
+            {mrgData && (
+              <div>
+                <Label className="text-sm text-gray-400">Sub-Rules ({mrgData.rules.length})</Label>
+                <div className="mt-1 max-h-52 overflow-y-auto space-y-0.5 border border-gray-700 rounded p-1">
+                  {mrgData.rules.map(subRule => {
+                    const override = mrgOverrides.find(o => o.name === subRule.name);
+                    const excluded = mrgExcludedRules.includes(subRule.name);
+                    return (
+                      <div key={subRule.name} className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] ${excluded ? "opacity-40 line-through" : override ? "bg-gray-700" : ""}`}>
+                        <button
+                          onClick={() => {
+                            if (excluded) {
+                              setMrgExcludedRules(mrgExcludedRules.filter(n => n !== subRule.name));
+                            } else {
+                              setMrgExcludedRules([...mrgExcludedRules, subRule.name]);
+                              setMrgOverrides(mrgOverrides.filter(o => o.name !== subRule.name));
+                            }
+                          }}
+                          className="text-gray-500 hover:text-gray-300 shrink-0" title={excluded ? "Re-enable rule" : "Exclude rule"}
+                        >
+                          {excluded ? "☐" : "☑"}
+                        </button>
+                        <div className="flex-1 min-w-0 truncate" title={subRule.description}>
+                          <span className="font-mono">{subRule.name}</span>
+                        </div>
+                        {!excluded && (
+                          <select
+                            value={override?.actionToUse || subRule.defaultAction.toUpperCase()}
+                            onChange={(e) => {
+                              const newAction = e.target.value;
+                              if (newAction === subRule.defaultAction.toUpperCase()) {
+                                setMrgOverrides(mrgOverrides.filter(o => o.name !== subRule.name));
+                              } else {
+                                setMrgOverrides([
+                                  ...mrgOverrides.filter(o => o.name !== subRule.name),
+                                  { name: subRule.name, actionToUse: newAction },
+                                ]);
+                              }
+                            }}
+                            className="bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-[10px] w-16 shrink-0"
+                          >
+                            <option value="BLOCK">Block</option>
+                            <option value="COUNT">Count</option>
+                            <option value="ALLOW">Allow</option>
+                          </select>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="flex gap-3 mt-1 text-[10px] text-gray-500">
+                  {mrgOverrides.length > 0 && <span className="text-yellow-400">{mrgOverrides.length} override{mrgOverrides.length > 1 ? "s" : ""}</span>}
+                  {mrgExcludedRules.length > 0 && <span className="text-red-400">{mrgExcludedRules.length} excluded</span>}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      }
 
       case "IPSetReferenceStatement":
         return (
