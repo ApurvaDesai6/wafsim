@@ -155,20 +155,20 @@ function evaluateRule(rule: Rule, context: EvaluationContext): RuleTrace {
 
 /**
  * Get the effective action for a rule
- * Handles override actions for managed rule groups
+ * Handles override actions for managed rule groups and rule group references
  */
 function getEffectiveAction(rule: Rule): WAFAction {
-  // For managed rule groups, check override action
-  if (rule.statement.type === "ManagedRuleGroupStatement") {
-    // If override action is "COUNT", treat as count
+  // For managed rule groups and rule group references, use overrideAction
+  if (rule.statement.type === "ManagedRuleGroupStatement" || rule.statement.type === "RuleGroupReferenceStatement") {
+    // If override action is "COUNT", the entire group's action becomes COUNT
     if (rule.overrideAction === "COUNT") {
       return "COUNT";
     }
-    // If override action is "NONE", use the rule's normal action
-    if (rule.overrideAction === "NONE" || !rule.overrideAction) {
-      return rule.action;
-    }
-    return rule.overrideAction;
+    // If override action is "NONE" (default), the group's internal rule action applies
+    // The internal action was already determined during evaluation — use BLOCK as the
+    // effective terminating action since the evaluator only returns matched=true when
+    // a non-COUNT sub-rule matched
+    return "BLOCK";
   }
 
   return rule.action;
@@ -394,11 +394,11 @@ export function validateWebACL(webACL: WebACL): {
     wcu += ruleWcu;
   }
 
-  // Check WCU limit
-  if (wcu > 1500) {
-    errors.push(`WCU ${wcu} exceeds maximum of 1500`);
-  } else if (wcu > 1200) {
-    warnings.push(`WCU ${wcu} is close to maximum (1500), consider optimizing rules`);
+  // Check WCU limit (5000 max, 1500 base pricing tier)
+  if (wcu > 5000) {
+    errors.push(`WCU ${wcu} exceeds maximum of 5000`);
+  } else if (wcu > 1500) {
+    warnings.push(`WCU ${wcu} exceeds base tier (1500), additional fees apply`);
   }
 
   // Check for scope conflicts

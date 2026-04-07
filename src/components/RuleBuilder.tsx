@@ -55,6 +55,7 @@ const STATEMENT_TYPES = [
   { value: "LabelMatchStatement", label: "Label Match", description: "Match labels from other rules", doc: "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-label-match-statement.html" },
   { value: "RateBasedStatement", label: "Rate Based", description: "Rate limiting rules", doc: "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-rate-based.html" },
   { value: "RegexMatchStatement", label: "Regex Match", description: "Match regex patterns", doc: "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-regex-match.html" },
+  { value: "RegexPatternSetReferenceStatement", label: "Regex Pattern Set", description: "Match against a regex pattern set", doc: "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-regex-pattern-set-match.html" },
   { value: "SizeConstraintStatement", label: "Size Constraint", description: "Check request component size", doc: "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-size-constraint-match.html" },
   { value: "SqliMatchStatement", label: "SQL Injection", description: "Detect SQL injection attacks", doc: "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-sqli-match.html" },
   { value: "XssMatchStatement", label: "XSS Match", description: "Detect cross-site scripting", doc: "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-xss-match.html" },
@@ -74,6 +75,9 @@ const FIELD_TO_MATCH_OPTIONS = [
   { value: "ALL_QUERY_ARGUMENTS", label: "All Query Arguments" },
   { value: "COOKIES", label: "Cookies" },
   { value: "JSON_BODY", label: "JSON Body" },
+  { value: "JA3_FINGERPRINT", label: "JA3 Fingerprint" },
+  { value: "HTTP_VERSION", label: "HTTP Version" },
+  { value: "HEADER_ORDER", label: "Header Order" },
 ];
 
 const POSITIONAL_CONSTRAINTS = [
@@ -213,6 +217,13 @@ export const RuleBuilder: React.FC<RuleBuilderProps> = ({ rule, onSave, onCancel
       : "LABEL"
   );
 
+  // Sensitivity level for SQLi/XSS
+  const [sensitivityLevel, setSensitivityLevel] = useState<"LOW" | "HIGH">(
+    rule?.statement?.type === "SqliMatchStatement" || rule?.statement?.type === "XssMatchStatement"
+      ? (rule.statement as { sensitivityLevel?: "LOW" | "HIGH" }).sensitivityLevel || (rule.statement.type === "SqliMatchStatement" ? "LOW" : "HIGH")
+      : "LOW"
+  );
+
   // IP Set state
   const [ipSetArn, setIpSetArn] = useState(
     rule?.statement?.type === "IPSetReferenceStatement"
@@ -333,6 +344,14 @@ export const RuleBuilder: React.FC<RuleBuilderProps> = ({ rule, onSave, onCancel
           textTransformations,
         } as Statement;
 
+      case "RegexPatternSetReferenceStatement":
+        return {
+          type: statementType,
+          arn: ipSetArn, // reuse ipSetArn state for ARN input
+          fieldToMatch: buildFieldToMatch(),
+          textTransformations,
+        } as Statement;
+
       case "SizeConstraintStatement":
         return {
           type: statementType,
@@ -347,7 +366,7 @@ export const RuleBuilder: React.FC<RuleBuilderProps> = ({ rule, onSave, onCancel
           type: statementType,
           fieldToMatch: buildFieldToMatch(),
           textTransformations,
-          sensitivityLevel: "HIGH",
+          sensitivityLevel,
         } as Statement;
 
       case "XssMatchStatement":
@@ -355,7 +374,7 @@ export const RuleBuilder: React.FC<RuleBuilderProps> = ({ rule, onSave, onCancel
           type: statementType,
           fieldToMatch: buildFieldToMatch(),
           textTransformations,
-          sensitivityLevel: "HIGH",
+          sensitivityLevel,
         } as Statement;
 
       case "AndStatement":
@@ -674,6 +693,23 @@ export const RuleBuilder: React.FC<RuleBuilderProps> = ({ rule, onSave, onCancel
           </div>
         );
 
+      case "RegexPatternSetReferenceStatement":
+        return (
+          <div className="space-y-4">
+            <div>
+              <Label className="text-sm text-gray-400">Regex Pattern Set ARN</Label>
+              <Input
+                value={ipSetArn}
+                onChange={(e) => setIpSetArn(e.target.value)}
+                placeholder="arn:aws:wafv2:us-east-1:123456789012:regional/regexpatternset/..."
+                className="bg-gray-800 border-gray-700 font-mono text-xs"
+              />
+            </div>
+            {renderFieldToMatchSelector()}
+            {renderTextTransformations()}
+          </div>
+        );
+
       case "SizeConstraintStatement":
         return (
           <div className="space-y-4">
@@ -724,15 +760,20 @@ export const RuleBuilder: React.FC<RuleBuilderProps> = ({ rule, onSave, onCancel
             {renderFieldToMatchSelector()}
             {renderTextTransformations()}
             
-            <div className="p-3 bg-gray-800 rounded-lg">
-              <div className="flex items-center gap-2 text-green-400 text-sm">
-                <AlertCircle className="w-4 h-4" />
-                <span>
-                  {statementType === "SqliMatchStatement" 
-                    ? "Uses AWS built-in SQL injection detection patterns (HIGH sensitivity)"
-                    : "Uses AWS built-in XSS detection patterns (HIGH sensitivity)"}
-                </span>
-              </div>
+            <div>
+              <Label className="text-sm text-gray-400">Sensitivity Level</Label>
+              <Select value={sensitivityLevel} onValueChange={(v) => setSensitivityLevel(v as "LOW" | "HIGH")}>
+                <SelectTrigger className="bg-gray-800 border-gray-700">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="LOW">Low</SelectItem>
+                  <SelectItem value="HIGH">High</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500 mt-1">
+                {sensitivityLevel === "HIGH" ? "More aggressive detection, may increase false positives" : "Standard detection, fewer false positives"}
+              </p>
             </div>
           </div>
         );

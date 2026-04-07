@@ -155,8 +155,8 @@ function evaluateByteMatch(
       break;
 
     case "CONTAINS_WORD":
-      // Word boundary aware matching
-      const wordRegex = new RegExp(`\\b${escapeRegex(searchString)}\\b`, "i");
+      // Word boundary aware matching - AWS WAF ByteMatch is case-sensitive
+      const wordRegex = new RegExp(`\\b${escapeRegex(searchString)}\\b`);
       matched = wordRegex.test(transformedContent);
       matchReason = matched
         ? `Contains word: "${searchString}"`
@@ -831,7 +831,7 @@ function evaluateSqliMatch(
   const { content: fieldContent } = extractField(context.request, statement.fieldToMatch as Statement extends infer S ? S extends { type: "SqliMatchStatement" } ? S["fieldToMatch"] : never : never);
   const transformedContent = applyTransformations(fieldContent, statement.textTransformations as Statement extends infer S ? S extends { type: "SqliMatchStatement" } ? S["textTransformations"] : never : never);
 
-  const sensitivity = statement.sensitivityLevel || "HIGH";
+  const sensitivity = statement.sensitivityLevel || "LOW";
   const matchResult = getSQLInjectionMatch(transformedContent, sensitivity);
 
   if (matchResult.detected) {
