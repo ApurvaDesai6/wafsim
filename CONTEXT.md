@@ -188,16 +188,23 @@ git checkout v2-improvements
 > Update this section at the end of each working session.
 
 **Date**: April 7, 2026
-**Version**: v2.33
+**Version**: v2.39
 **What was done**:
-- v2.19-2.20: Export engine accuracy audit (JSON + Terraform HCL) — all 14 statement types, correct API schema
+- v2.19-2.20: Export engine accuracy audit (JSON + Terraform HCL)
 - v2.21-2.22: AMR sub-rule listing with per-rule action override UI
-- v2.23-2.24: Import WebACL JSON engine with full validation + error handling
-- v2.25-2.26: Label propagation visualization in trace + scope-down statement UI for rate-based rules
-- v2.27: Text transformation chain visualization (before → after display)
-- v2.28-2.31: Already implemented in earlier versions (regex/IP set mgmt, batch test, attack presets)
-- v2.32: WCU calculator audit — fixed MAX_WCU to 5000, added base tier pricing indicator
-- v2.33: Shareable configs via URL hash encoding (#cfg=base64)
-- Deployed to Vercel, DNS updated, all auto-deploying from main branch
+- v2.23-2.24: Import WebACL JSON engine with full validation
+- v2.25-2.26: Label propagation visualization + scope-down statement UI
+- v2.27: Text transformation chain visualization
+- v2.28-2.31: Already implemented (regex/IP set mgmt, batch test, attack presets)
+- v2.32-2.33: WCU calculator audit (MAX_WCU fix) + shareable configs via URL
+- v2.34-2.35: Keyboard shortcuts (Ctrl+R/E/S) + accessibility pass (ARIA, semantic HTML)
+- v2.36-2.37: Custom response bodies for BLOCK rules + AWS docs links per statement type
+- v2.38-2.39: Edge case hardening + ErrorBoundary polish
 
-**Next up**: v2.34+ (keyboard shortcuts, accessibility, performance, custom response bodies, multi-WebACL comparison, docs, edge case sweep, polish)
+ALL scheduled improvements complete. April 8-30 is now buffer for:
+- SME feedback incorporation
+- Multi-WebACL comparison view (stretch)
+- Performance optimization (stretch)
+- Any bugs found during testing
+
+**Next up**: SME review prep, stretch features, or whatever feedback comes in from the SXO Slack channel
