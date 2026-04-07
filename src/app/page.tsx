@@ -9,6 +9,7 @@ import { EvaluationTrace } from "@/components/EvaluationTrace";
 import { RuleBuilder } from "@/components/RuleBuilder";
 import { ResourceManager } from "@/components/ResourceManager";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { runAllTests } from "@/engines/testSuite";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -59,6 +60,8 @@ export default function WAFSimPage() {
   const [isAnimating, setIsAnimating] = useState(false);
   const [wafResults, setWafResults] = useState<Map<string, string>>(new Map());
   const [trafficEdges, setTrafficEdges] = useState<Map<string, "passed" | "blocked">>(new Map());
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [testResults, setTestResults] = useState<any>(null);
 
   // v2.33: Load shared config from URL hash on mount
   useEffect(() => {
@@ -312,12 +315,13 @@ export default function WAFSimPage() {
           {/* Bottom Panel Bar */}
           <div className="border-t border-gray-700 bg-gray-900 shrink-0">
             <div className="flex items-center h-11 px-3 gap-2">
-              {(["simulator", "results", "compare", "logs"] as const).map(tab => (
+              {(["simulator", "results", "compare", "tests", "logs"] as const).map(tab => (
                 <button key={tab} onClick={() => setBottomTab(bottomTab === tab ? null : tab)}
                   className={`px-3 py-1.5 text-sm font-medium rounded transition-colors ${bottomTab === tab ? "bg-gray-700 text-white" : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"}`}>
                   {tab === "simulator" && "⚡ Simulate"}
                   {tab === "results" && <>Results {evaluationResult && <Badge className={`ml-1.5 text-[10px] px-1.5 py-0 ${evaluationResult.finalAction === "BLOCK" ? "bg-red-600" : evaluationResult.finalAction === "ALLOW" ? "bg-green-600" : "bg-yellow-600"}`}>{evaluationResult.finalAction}</Badge>}</>}
                   {tab === "compare" && <>Compare {wafs.length > 1 && <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0">{wafs.length} WAFs</Badge>}</>}
+                  {tab === "tests" && "🧪 Tests"}
                   {tab === "logs" && <>Sampled Requests {sampledRequests.length > 0 && <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0">{sampledRequests.length}</Badge>}</>}
                 </button>
               ))}
@@ -388,6 +392,47 @@ export default function WAFSimPage() {
                         </div>
                       </div>
                     )}
+                  </div>
+                )}
+                {bottomTab === "tests" && (
+                  <div className="h-full overflow-auto p-3">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Button size="sm" onClick={() => {
+                        const results = runAllTests();
+                        setTestResults(results);
+                      }} className="bg-purple-600 hover:bg-purple-700">Run All Tests</Button>
+                      {testResults && (
+                        <span className="text-xs">
+                          <span className="text-green-400">{testResults.summary.passed} passed</span>
+                          {testResults.summary.failed > 0 && <span className="text-red-400 ml-2">{testResults.summary.failed} failed</span>}
+                          <span className="text-gray-500 ml-2">/ {testResults.summary.total} total</span>
+                        </span>
+                      )}
+                    </div>
+                    {testResults && (
+                      <div className="space-y-1">
+                        <div className="text-xs font-semibold text-gray-400 mb-1">Sub-Rule Tests</div>
+                        {testResults.subRuleResults.map((r: { passed: boolean; testCase: { subRuleName: string; description: string; ruleGroupName: string }; actualMatch: boolean; finalAction: string; error?: string }, i: number) => (
+                          <div key={`sub-${i}`} className={`flex items-center gap-2 text-[11px] px-2 py-1 rounded ${r.passed ? "bg-green-900/20" : "bg-red-900/20"}`}>
+                            <span>{r.passed ? "✅" : "❌"}</span>
+                            <span className="font-mono text-gray-300">{r.testCase.subRuleName}</span>
+                            <span className="text-gray-500 truncate flex-1">{r.testCase.description}</span>
+                            {!r.passed && <span className="text-red-400 shrink-0">got: {r.finalAction}</span>}
+                            {r.error && <span className="text-red-400 shrink-0">{r.error}</span>}
+                          </div>
+                        ))}
+                        <div className="text-xs font-semibold text-gray-400 mt-3 mb-1">Evaluation Order Tests</div>
+                        {testResults.orderResults.map((r: { passed: boolean; testCase: { name: string; description: string }; actualFinalAction: string; actualTerminatingRule?: string; error?: string }, i: number) => (
+                          <div key={`order-${i}`} className={`flex items-center gap-2 text-[11px] px-2 py-1 rounded ${r.passed ? "bg-green-900/20" : "bg-red-900/20"}`}>
+                            <span>{r.passed ? "✅" : "❌"}</span>
+                            <span className="font-mono text-gray-300">{r.testCase.name}</span>
+                            <span className="text-gray-500 truncate flex-1">{r.testCase.description}</span>
+                            {!r.passed && <span className="text-red-400 shrink-0">got: {r.actualFinalAction}{r.actualTerminatingRule ? ` by ${r.actualTerminatingRule}` : ""}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {!testResults && <div className="text-gray-500 text-sm">Click "Run All Tests" to validate sub-rule triggers and evaluation order</div>}
                   </div>
                 )}
                 {bottomTab === "logs" && (

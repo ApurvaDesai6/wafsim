@@ -446,6 +446,9 @@ function evaluateManagedRule(
       // Handle "any" field to check all headers
       if ((criteria.field || "").toLowerCase() === "any") {
         const allHeadersValue = context.request.headers?.map(h => h.value).join(" ") || "";
+        if (criteria.patterns) {
+          return (criteria.patterns as (string | RegExp)[]).some(p => p instanceof RegExp ? p.test(allHeadersValue) : allHeadersValue.toLowerCase().includes(p.toLowerCase()));
+        }
         if (criteria.pattern instanceof RegExp) {
           return criteria.pattern.test(allHeadersValue);
         }
@@ -456,6 +459,10 @@ function evaluateManagedRule(
         (h) => h.name.toLowerCase() === (criteria.field || "").toLowerCase()
       );
       if (!header) return false;
+      // Check patterns array first (used by managed rule groups)
+      if (criteria.patterns) {
+        return (criteria.patterns as (string | RegExp)[]).some(p => p instanceof RegExp ? p.test(header.value) : header.value.toLowerCase().includes(p.toLowerCase()));
+      }
       if (criteria.pattern instanceof RegExp) {
         return criteria.pattern.test(header.value);
       }
@@ -521,10 +528,11 @@ function evaluateManagedRule(
         contentToCheck = context.request.uri.split("?")[1] || "";
       }
       
+      const byteLength = new TextEncoder().encode(contentToCheck).length;
       if (criteria.operator === "exceeds") {
-        return contentToCheck.length > size;
+        return byteLength > size;
       }
-      return contentToCheck.length === size;
+      return byteLength === size;
     }
 
     case "ip_in_list": {
