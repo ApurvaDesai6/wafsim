@@ -3,19 +3,7 @@
 import React, { useState } from "react";
 import { useWAFSimStore } from "@/store/wafsimStore";
 import { WebACL, Rule, WAFAction, Statement, OverrideAction } from "@/lib/types";
-import {
-  Shield,
-  Plus,
-  Trash2,
-  GripVertical,
-  ChevronDown,
-  ChevronRight,
-  AlertTriangle,
-  Check,
-  X,
-  Edit,
-  Settings,
-} from "lucide-react";
+import { Shield, Plus, Trash2, GripVertical, ChevronDown, ChevronRight, AlertTriangle, Check, X, Edit, Settings, List } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,6 +24,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { WCUBudgetMeter } from "./WCUBudgetMeter";
 import { calculateRuleWCU } from "@/engines/wcuCalculator";
+import { getManagedRuleGroup } from "@/lib/managedRuleGroups";
 
 interface WAFConfigPanelProps {
   wafId: string;
@@ -353,6 +342,68 @@ export const WAFConfigPanel: React.FC<WAFConfigPanelProps> = ({ wafId, onEditRul
                             {JSON.stringify(rule.statement, null, 2)}
                           </div>
                         </div>
+
+                        {/* Managed Rule Group Sub-Rules (v2.21 + v2.22) */}
+                        {rule.statement.type === "ManagedRuleGroupStatement" && (() => {
+                          const mrg = getManagedRuleGroup((rule.statement as { name: string }).name);
+                          const stmt = rule.statement as import("@/lib/types").ManagedRuleGroupStatement;
+                          if (!mrg) return null;
+                          return (
+                            <details className="group/sub">
+                              <summary className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-200 cursor-pointer select-none py-1">
+                                <List className="w-3 h-3" />
+                                <span>Sub-rules ({mrg.rules.length})</span>
+                                <ChevronRight className="w-3 h-3 group-open/sub:rotate-90 transition-transform ml-auto" />
+                              </summary>
+                              <div className="mt-1 max-h-48 overflow-y-auto space-y-0.5">
+                                {mrg.rules.map((subRule) => {
+                                  const override = stmt.ruleActionOverrides?.find(o => o.name === subRule.name);
+                                  const effectiveAction = override?.actionToUse || subRule.defaultAction.toUpperCase();
+                                  const isOverridden = !!override;
+                                  return (
+                                    <div key={subRule.name} className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] ${isOverridden ? "bg-gray-600" : "bg-gray-750"}`}>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="font-mono truncate" title={subRule.description}>{subRule.name}</div>
+                                      </div>
+                                      <select
+                                        value={effectiveAction}
+                                        onChange={(e) => {
+                                          const newAction = e.target.value as WAFAction;
+                                          const currentOverrides = stmt.ruleActionOverrides || [];
+                                          let newOverrides;
+                                          if (newAction === subRule.defaultAction.toUpperCase()) {
+                                            // Remove override (back to default)
+                                            newOverrides = currentOverrides.filter(o => o.name !== subRule.name);
+                                          } else {
+                                            // Add/update override
+                                            newOverrides = [
+                                              ...currentOverrides.filter(o => o.name !== subRule.name),
+                                              { name: subRule.name, actionToUse: newAction },
+                                            ];
+                                          }
+                                          updateRuleInWAF(wafId, rule.name, {
+                                            statement: { ...stmt, ruleActionOverrides: newOverrides.length > 0 ? newOverrides : undefined } as Statement,
+                                          });
+                                        }}
+                                        className="bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-[10px] w-20 shrink-0"
+                                      >
+                                        <option value="BLOCK">Block</option>
+                                        <option value="COUNT">Count</option>
+                                        <option value="ALLOW">Allow</option>
+                                      </select>
+                                      {isOverridden && <span className="text-yellow-400 text-[9px] shrink-0">*</span>}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              {stmt.ruleActionOverrides && stmt.ruleActionOverrides.length > 0 && (
+                                <div className="mt-1 text-[10px] text-yellow-400/70">
+                                  * {stmt.ruleActionOverrides.length} override{stmt.ruleActionOverrides.length > 1 ? "s" : ""} active
+                                </div>
+                              )}
+                            </details>
+                          );
+                        })()}
 
                         {/* Rule Labels */}
                         <div className="flex items-center justify-between">
