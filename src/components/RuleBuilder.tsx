@@ -164,6 +164,24 @@ export const RuleBuilder: React.FC<RuleBuilderProps> = ({ rule, onSave, onCancel
       : "IP"
   );
 
+  // Scope-down statement for rate-based rules
+  const [scopeDownType, setScopeDownType] = useState<string>(
+    rule?.statement?.type === "RateBasedStatement"
+      ? (rule.statement as { scopeDownStatement?: { type: string } }).scopeDownStatement?.type || "NONE"
+      : "NONE"
+  );
+  const [scopeDownValue, setScopeDownValue] = useState<string>(
+    rule?.statement?.type === "RateBasedStatement"
+      ? (() => {
+          const sd = (rule.statement as { scopeDownStatement?: Record<string, unknown> }).scopeDownStatement;
+          if (!sd) return "";
+          if (sd.type === "GeoMatchStatement") return ((sd as { countryCodes?: string[] }).countryCodes || []).join(",");
+          if (sd.type === "ByteMatchStatement") return (sd as { searchString?: string }).searchString || "";
+          return "";
+        })()
+      : ""
+  );
+
   // Regex Match state
   const [regexString, setRegexString] = useState(
     rule?.statement?.type === "RegexMatchStatement"
@@ -249,6 +267,19 @@ export const RuleBuilder: React.FC<RuleBuilderProps> = ({ rule, onSave, onCancel
     return base;
   };
 
+  const buildScopeDownStatement = (): Statement | undefined => {
+    switch (scopeDownType) {
+      case "GeoMatchStatement":
+        return { type: "GeoMatchStatement", countryCodes: scopeDownValue.split(",").map(s => s.trim()).filter(Boolean) } as Statement;
+      case "ByteMatchStatement":
+        return { type: "ByteMatchStatement", searchString: scopeDownValue, fieldToMatch: { type: "URI_PATH" }, textTransformations: [{ type: "NONE", priority: 1 }], positionalConstraint: "CONTAINS" } as Statement;
+      case "IPSetReferenceStatement":
+        return { type: "IPSetReferenceStatement", arn: scopeDownValue, ipSetReference: { arn: scopeDownValue } } as Statement;
+      default:
+        return undefined;
+    }
+  };
+
   const buildStatement = (): Statement => {
     const baseStatement: Record<string, unknown> = {
       type: statementType,
@@ -285,11 +316,13 @@ export const RuleBuilder: React.FC<RuleBuilderProps> = ({ rule, onSave, onCancel
         } as Statement;
 
       case "RateBasedStatement":
+        const scopeDown = scopeDownType !== "NONE" ? buildScopeDownStatement() : undefined;
         return {
           type: statementType,
           rateLimit,
           evaluationWindowSec: evaluationWindow,
           aggregateKeyType,
+          ...(scopeDown && { scopeDownStatement: scopeDown }),
         } as Statement;
 
       case "RegexMatchStatement":
@@ -583,6 +616,34 @@ export const RuleBuilder: React.FC<RuleBuilderProps> = ({ rule, onSave, onCancel
                 {aggregateKeyType === "CUSTOM_KEYS" && "Rate limit by custom combination of attributes"}
                 {aggregateKeyType === "CONSTANT" && "Rate limit across all requests (global)"}
               </p>
+            </div>
+
+            <div className="p-3 bg-gray-800 border border-gray-700 rounded-lg space-y-3">
+              <Label className="text-sm text-gray-400">Scope-Down Statement (optional)</Label>
+              <Select value={scopeDownType} onValueChange={setScopeDownType}>
+                <SelectTrigger className="bg-gray-800 border-gray-700">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="NONE">None</SelectItem>
+                  <SelectItem value="GeoMatchStatement">Geo Match (country codes)</SelectItem>
+                  <SelectItem value="ByteMatchStatement">Byte Match (URI contains)</SelectItem>
+                  <SelectItem value="IPSetReferenceStatement">IP Set Reference (ARN)</SelectItem>
+                </SelectContent>
+              </Select>
+              {scopeDownType !== "NONE" && (
+                <Input
+                  value={scopeDownValue}
+                  onChange={(e) => setScopeDownValue(e.target.value)}
+                  placeholder={
+                    scopeDownType === "GeoMatchStatement" ? "US,CA,GB" :
+                    scopeDownType === "ByteMatchStatement" ? "/api/login" :
+                    "arn:aws:wafv2:..."
+                  }
+                  className="bg-gray-700 border-gray-600"
+                />
+              )}
+              <p className="text-xs text-gray-500">Only count requests matching this condition toward the rate limit</p>
             </div>
 
             <div className="p-3 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">

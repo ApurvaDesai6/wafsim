@@ -130,7 +130,16 @@ export const EvaluationTrace: React.FC<EvaluationTraceProps> = ({ result }) => {
       {/* Rules Timeline */}
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-2">
-          {result.ruleTrace.map((trace, index) => (
+          {result.ruleTrace.map((trace, index) => {
+            // v2.25: Calculate label propagation context
+            const labelsAvailableBefore = result.ruleTrace
+              .slice(0, index)
+              .flatMap(t => t.labelsAdded);
+            const consumedLabels = trace.reason?.includes("Label match:") 
+              ? labelsAvailableBefore.filter(l => trace.reason.includes(l))
+              : [];
+
+            return (
             <Card
               key={trace.ruleName}
               className={cn(
@@ -147,6 +156,12 @@ export const EvaluationTrace: React.FC<EvaluationTraceProps> = ({ result }) => {
                       {trace.priority}
                     </Badge>
                     <span className="font-medium">{trace.ruleName}</span>
+                    {trace.labelsAdded.length > 0 && (
+                      <span className="text-[10px] text-blue-400">+{trace.labelsAdded.length} label{trace.labelsAdded.length > 1 ? "s" : ""}</span>
+                    )}
+                    {consumedLabels.length > 0 && (
+                      <span className="text-[10px] text-purple-400">⟵ uses label</span>
+                    )}
                     {expandedRules.has(trace.ruleName) ? (
                       <ChevronDown className="w-4 h-4 text-gray-400" />
                     ) : (
@@ -173,6 +188,21 @@ export const EvaluationTrace: React.FC<EvaluationTraceProps> = ({ result }) => {
 
               {expandedRules.has(trace.ruleName) && (
                 <CardContent className="px-3 pb-3 pt-0 space-y-3">
+                  {/* Label Propagation Context */}
+                  {labelsAvailableBefore.length > 0 && (
+                    <div>
+                      <span className="text-sm text-gray-400">Labels available at this rule:</span>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {labelsAvailableBefore.map((label) => (
+                          <Badge key={label} variant="outline" className={cn("text-xs", consumedLabels.includes(label) ? "text-purple-400 border-purple-400" : "text-gray-500")}>
+                            <Tag className="w-3 h-3 mr-1" />
+                            {label}
+                            {consumedLabels.includes(label) && " ✓"}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {/* Action */}
                   {trace.matched && trace.action !== "no-action" && (
                     <div className="flex items-center gap-2">
@@ -234,7 +264,8 @@ export const EvaluationTrace: React.FC<EvaluationTraceProps> = ({ result }) => {
                 </CardContent>
               )}
             </Card>
-          ))}
+          );
+          })}
         </div>
       </ScrollArea>
 
