@@ -132,26 +132,30 @@ const defaultRequest: HttpRequest = {
   country: "US",
 };
 
-// Initial topology
+// Initial topology — two independent paths from Internet:
+// Path A: Internet → CloudFront → ALB → backends (web app)
+// Path B: Internet → API Gateway → Lambda (separate API)
 const initialNodes: AWSResourceNode[] = [
-  { id: "internet-1", type: "INTERNET", label: "Internet", icon: "🌐", wafAttachable: false, position: { x: 50, y: 220 } },
-  { id: "cloudfront-1", type: "CLOUDFRONT", label: "CloudFront CDN", icon: "☁️", wafAttachable: true, scope: "CLOUDFRONT", position: { x: 250, y: 220 } },
-  { id: "alb-1", type: "ALB", label: "Application Load Balancer", icon: "⚖️", wafAttachable: true, scope: "REGIONAL", position: { x: 480, y: 220 } },
-  { id: "ecs-1", type: "ECS", label: "Web App (ECS)", icon: "🐳", wafAttachable: false, position: { x: 720, y: 120 } },
-  { id: "lambda-1", type: "LAMBDA", label: "API Lambda", icon: "⚡", wafAttachable: false, position: { x: 720, y: 220 } },
-  { id: "ecs-2", type: "ECS", label: "Auth Service (ECS)", icon: "🐳", wafAttachable: false, position: { x: 720, y: 320 } },
-  { id: "apigw-1", type: "API_GATEWAY", label: "API Gateway", icon: "🔌", wafAttachable: true, scope: "REGIONAL", position: { x: 480, y: 420 } },
-  { id: "lambda-2", type: "LAMBDA", label: "Webhook Handler", icon: "⚡", wafAttachable: false, position: { x: 720, y: 420 } },
+  { id: "internet-1", type: "INTERNET", label: "Internet", icon: "🌐", wafAttachable: false, position: { x: 50, y: 280 } },
+  // Path A: Web application
+  { id: "cloudfront-1", type: "CLOUDFRONT", label: "CloudFront CDN", icon: "☁️", wafAttachable: true, scope: "CLOUDFRONT", position: { x: 280, y: 160 } },
+  { id: "alb-1", type: "ALB", label: "Application LB", icon: "⚖️", wafAttachable: true, scope: "REGIONAL", position: { x: 510, y: 160 } },
+  { id: "ecs-1", type: "ECS", label: "Web App (ECS)", icon: "🐳", wafAttachable: false, position: { x: 740, y: 80 } },
+  { id: "lambda-1", type: "LAMBDA", label: "API Handler", icon: "⚡", wafAttachable: false, position: { x: 740, y: 240 } },
+  // Path B: Separate API
+  { id: "apigw-1", type: "API_GATEWAY", label: "API Gateway", icon: "🔌", wafAttachable: true, scope: "REGIONAL", position: { x: 280, y: 420 } },
+  { id: "lambda-2", type: "LAMBDA", label: "Webhook Handler", icon: "⚡", wafAttachable: false, position: { x: 510, y: 420 } },
 ];
 
 const initialEdges: TopologyEdge[] = [
+  // Path A: Web app
   { id: "edge-1", source: "internet-1", target: "cloudfront-1" },
   { id: "edge-2", source: "cloudfront-1", target: "alb-1" },
   { id: "edge-3", source: "alb-1", target: "ecs-1" },
   { id: "edge-4", source: "alb-1", target: "lambda-1" },
-  { id: "edge-5", source: "alb-1", target: "ecs-2" },
-  { id: "edge-6", source: "internet-1", target: "apigw-1" },
-  { id: "edge-7", source: "apigw-1", target: "lambda-2" },
+  // Path B: API
+  { id: "edge-5", source: "internet-1", target: "apigw-1" },
+  { id: "edge-6", source: "apigw-1", target: "lambda-2" },
 ];
 
 // Default WAF template
@@ -506,6 +510,7 @@ export const useWAFSimStore = create<WAFSimState>()(
     }),
     {
       name: "wafsim-storage",
+      version: 2, // Bump to clear stale persisted state from pre-v2.47
       partialize: (state) => ({
         nodes: state.nodes,
         edges: state.edges,
@@ -513,6 +518,16 @@ export const useWAFSimStore = create<WAFSimState>()(
         ipSets: state.ipSets,
         regexPatternSets: state.regexPatternSets,
       }),
+      migrate: () => {
+        // Clear stale state — return fresh defaults
+        return {
+          nodes: initialNodes,
+          edges: initialEdges,
+          wafs: [],
+          ipSets: [],
+          regexPatternSets: [],
+        };
+      },
     }
   )
 );
