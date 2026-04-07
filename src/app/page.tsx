@@ -8,6 +8,7 @@ import { TrafficSimulator } from "@/components/TrafficSimulator";
 import { EvaluationTrace } from "@/components/EvaluationTrace";
 import { RuleBuilder } from "@/components/RuleBuilder";
 import { ResourceManager } from "@/components/ResourceManager";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -294,6 +295,7 @@ export default function WAFSimPage() {
         <div className="flex-1 flex flex-col min-w-0">
           {/* Topology Canvas */}
           <div className="flex-1 relative min-h-0">
+            <ErrorBoundary>
             <TopologyCanvas
               onNodeClick={handleNodeClick}
               onEdgeClick={handleEdgeClick}
@@ -304,6 +306,7 @@ export default function WAFSimPage() {
               wafResults={wafResults}
               trafficEdges={trafficEdges}
             />
+            </ErrorBoundary>
           </div>
 
           {/* Bottom Panel Bar */}
