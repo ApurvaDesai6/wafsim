@@ -229,7 +229,9 @@ export default function WAFSimPage() {
       pathResults.forEach(pr => resultsMap.set(pr.wafId, pr.result.finalAction));
       setWafResults(resultsMap);
 
-      // Color ALL traffic edges
+      // Color ALL traffic edges based on blocked/reachable status
+      // Rule: edges INTO a blocked node = green (traffic arrived)
+      //        edges OUT OF a blocked node = red (traffic stopped here)
       const flowMap = new Map<string, "passed" | "blocked">();
       for (const edge of edges) {
         if (edge.wafId) continue;
@@ -237,16 +239,10 @@ export default function WAFSimPage() {
         if (srcNode?.type === "WAF") continue;
 
         if (blockedNodes.has(edge.source)) {
-          // Source is blocked — no traffic flows out
+          // Source is blocked — no traffic flows out of this node
           flowMap.set(edge.id, "blocked");
-        } else if (blockedNodes.has(edge.target) && !reachableNodes.has(edge.target)) {
-          // Target is blocked (WAF blocked here) — edge shows blocked
-          flowMap.set(edge.id, "blocked");
-        } else if (reachableNodes.has(edge.source)) {
-          // Source is reachable — traffic flows through
-          flowMap.set(edge.id, "passed");
         } else {
-          // Unreachable (disconnected) — leave uncolored
+          // Source is not blocked — traffic flows through this edge
           flowMap.set(edge.id, "passed");
         }
       }
