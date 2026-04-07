@@ -127,7 +127,7 @@ export default function WAFSimPage() {
     toast.success(`WAF created and attached to ${node.label}`);
   }, [selectedNodeId, nodes, store, selectWAF]);
 
-  // Run simulation through ALL WAFs in the topology
+  // Run simulation through ALL WAFs in the topology (topology-aware)
   const handleSimulate = useCallback(() => {
     if (wafs.length === 0) { toast.error("No WAF configured"); return; }
     setIsSimulating(true);
@@ -135,66 +135,118 @@ export default function WAFSimPage() {
 
     setTimeout(() => {
       const pathResults: Array<{ wafName: string; wafId: string; result: EvaluationResult }> = [];
-      let finalResult: EvaluationResult | null = null;
-      let terminatingWafId: string | null = null;
 
-      for (const waf of wafs) {
-        const result = evaluateWebACL(currentRequest, waf, { ipSets, regexPatternSets });
-        pathResults.push({ wafName: waf.name, wafId: waf.id, result });
-        finalResult = result;
-        terminatingWafId = waf.id;
-        if (result.finalAction === "BLOCK" || result.finalAction === "CAPTCHA" || result.finalAction === "CHALLENGE") {
-          break;
+      // Build a map: wafId -> resource node it protects
+      const wafToResource = new Map<string, string>();
+      for (const edge of edges) {
+        if (!edge.wafId) continue;
+        const srcNode = nodes.find(n => n.id === edge.source);
+        if (srcNode?.type === "WAF") {
+          wafToResource.set(edge.wafId, edge.target);
         }
       }
 
-      if (finalResult && terminatingWafId) {
-        setEvaluationResultWithWAF(finalResult, terminatingWafId);
-      }
-      // Store per-WAF results for visual feedback on each edge
-      const resultsMap = new Map<string, string>();
-      pathResults.forEach(pr => resultsMap.set(pr.wafId, pr.result.finalAction));
-      setWafResults(resultsMap);
-
-      // Compute traffic flow: which edges did traffic pass through?
-      const flowMap = new Map<string, "passed" | "blocked">();
-      
-      // Find which resources are directly protected by blocking WAFs
-      const blockedAtNodes = new Set<string>();
-      for (const pr of pathResults) {
-        if (pr.result.finalAction === "BLOCK") {
-          edges.filter(e => e.wafId === pr.wafId).forEach(e => blockedAtNodes.add(e.target));
-        }
-      }
-
-      // Propagate: find ALL nodes downstream of blocked nodes (BFS)
-      const allBlockedNodes = new Set<string>(blockedAtNodes);
-      const queue = [...blockedAtNodes];
-      while (queue.length > 0) {
-        const nodeId = queue.shift()!;
-        // Find all traffic edges going OUT of this node
-        for (const edge of edges) {
-          if (edge.wafId) continue; // skip WAF edges
-          const srcNode = nodes.find(n => n.id === edge.source);
-          if (srcNode?.type === "WAF") continue;
-          if (edge.source === nodeId && !allBlockedNodes.has(edge.target)) {
-            allBlockedNodes.add(edge.target);
-            queue.push(edge.target);
-          }
-        }
-      }
-
-      // Mark all traffic edges
+      // Build adjacency for traffic edges only (no WAF edges)
+      const trafficChildren = new Map<string, string[]>();
       for (const edge of edges) {
         if (edge.wafId) continue;
         const srcNode = nodes.find(n => n.id === edge.source);
         if (srcNode?.type === "WAF") continue;
-        
-        if (allBlockedNodes.has(edge.source)) {
-          // Source is at or beyond the block point: no traffic flows
+        if (!trafficChildren.has(edge.source)) trafficChildren.set(edge.source, []);
+        trafficChildren.get(edge.source)!.push(edge.target);
+      }
+
+      // Find Internet/entry nodes (nodes with no incoming traffic edges)
+      const hasIncoming = new Set<string>();
+      for (const edge of edges) {
+        if (edge.wafId) continue;
+        const srcNode = nodes.find(n => n.id === edge.source);
+        if (srcNode?.type === "WAF") continue;
+        hasIncoming.add(edge.target);
+      }
+      const entryNodes = nodes.filter(n => n.type !== "WAF" && !hasIncoming.has(n.id)).map(n => n.id);
+
+      // BFS from entry nodes, evaluating WAFs as we encounter protected resources
+      const blockedNodes = new Set<string>();
+      const reachableNodes = new Set<string>();
+      const queue = [...entryNodes];
+      entryNodes.forEach(n => reachableNodes.add(n));
+
+      // Find which WAF protects which node
+      const nodeToWaf = new Map<string, string>(); // resourceNodeId -> wafId
+      for (const [wafId, resourceId] of wafToResource) {
+        nodeToWaf.set(resourceId, wafId);
+      }
+
+      while (queue.length > 0) {
+        const nodeId = queue.shift()!;
+        if (blockedNodes.has(nodeId)) continue;
+
+        // Check if this node has a WAF protecting it
+        const protectingWafId = nodeToWaf.get(nodeId);
+        if (protectingWafId) {
+          const waf = wafs.find(w => w.id === protectingWafId);
+          if (waf) {
+            const result = evaluateWebACL(currentRequest, waf, { ipSets, regexPatternSets });
+            pathResults.push({ wafName: waf.name, wafId: waf.id, result });
+
+            if (result.finalAction === "BLOCK" || result.finalAction === "CAPTCHA" || result.finalAction === "CHALLENGE") {
+              // Block this node and all downstream
+              blockedNodes.add(nodeId);
+              const downstreamQueue = [nodeId];
+              while (downstreamQueue.length > 0) {
+                const dn = downstreamQueue.shift()!;
+                for (const child of trafficChildren.get(dn) || []) {
+                  if (!blockedNodes.has(child)) {
+                    blockedNodes.add(child);
+                    downstreamQueue.push(child);
+                  }
+                }
+              }
+              continue; // Don't traverse children normally
+            }
+          }
+        }
+
+        // Node is reachable — traverse children
+        for (const child of trafficChildren.get(nodeId) || []) {
+          if (!reachableNodes.has(child) && !blockedNodes.has(child)) {
+            reachableNodes.add(child);
+            queue.push(child);
+          }
+        }
+      }
+
+      // Set evaluation result from the first blocking WAF, or the last evaluated
+      const blockingResult = pathResults.find(pr => pr.result.finalAction === "BLOCK" || pr.result.finalAction === "CAPTCHA" || pr.result.finalAction === "CHALLENGE");
+      const displayResult = blockingResult || pathResults[pathResults.length - 1];
+      if (displayResult) {
+        setEvaluationResultWithWAF(displayResult.result, displayResult.wafId);
+      }
+
+      // Per-WAF results for edge coloring
+      const resultsMap = new Map<string, string>();
+      pathResults.forEach(pr => resultsMap.set(pr.wafId, pr.result.finalAction));
+      setWafResults(resultsMap);
+
+      // Color ALL traffic edges
+      const flowMap = new Map<string, "passed" | "blocked">();
+      for (const edge of edges) {
+        if (edge.wafId) continue;
+        const srcNode = nodes.find(n => n.id === edge.source);
+        if (srcNode?.type === "WAF") continue;
+
+        if (blockedNodes.has(edge.source)) {
+          // Source is blocked — no traffic flows out
           flowMap.set(edge.id, "blocked");
+        } else if (blockedNodes.has(edge.target) && !reachableNodes.has(edge.target)) {
+          // Target is blocked (WAF blocked here) — edge shows blocked
+          flowMap.set(edge.id, "blocked");
+        } else if (reachableNodes.has(edge.source)) {
+          // Source is reachable — traffic flows through
+          flowMap.set(edge.id, "passed");
         } else {
-          // Traffic flows through this edge (even if target is the blocked node, traffic reached it)
+          // Unreachable (disconnected) — leave uncolored
           flowMap.set(edge.id, "passed");
         }
       }
@@ -204,15 +256,15 @@ export default function WAFSimPage() {
       setSampledRequests(prev => [{
         timestamp: new Date().toISOString(),
         request: currentRequest,
-        result: finalResult!,
-        wafName: wafs.find(w => w.id === terminatingWafId)?.name || "",
-        wafId: terminatingWafId!,
+        result: displayResult?.result || pathResults[0]?.result,
+        wafName: displayResult?.wafName || "",
+        wafId: displayResult?.wafId || "",
         pathResults,
       }, ...prev].slice(0, 100));
 
       if (!bottomTab) setBottomTab("results");
     }, 600);
-  }, [wafs, currentRequest, ipSets, regexPatternSets, bottomTab]);
+  }, [wafs, currentRequest, ipSets, regexPatternSets, nodes, edges, bottomTab]);
 
   const handleNodeClick = useCallback((nodeId: string) => selectNode(nodeId), [selectNode]);
   const handleEdgeClick = useCallback((edgeId: string) => {
