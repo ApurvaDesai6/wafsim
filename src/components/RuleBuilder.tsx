@@ -49,18 +49,18 @@ interface RuleBuilderProps {
 }
 
 const STATEMENT_TYPES = [
-  { value: "ByteMatchStatement", label: "Byte Match", description: "Match strings in request components" },
-  { value: "GeoMatchStatement", label: "Geo Match", description: "Match by country/region" },
-  { value: "IPSetReferenceStatement", label: "IP Set", description: "Match IPs from a set" },
-  { value: "LabelMatchStatement", label: "Label Match", description: "Match labels from other rules" },
-  { value: "RateBasedStatement", label: "Rate Based", description: "Rate limiting rules" },
-  { value: "RegexMatchStatement", label: "Regex Match", description: "Match regex patterns" },
-  { value: "SizeConstraintStatement", label: "Size Constraint", description: "Check request component size" },
-  { value: "SqliMatchStatement", label: "SQL Injection", description: "Detect SQL injection attacks" },
-  { value: "XssMatchStatement", label: "XSS Match", description: "Detect cross-site scripting" },
-  { value: "AndStatement", label: "AND", description: "All conditions must match" },
-  { value: "OrStatement", label: "OR", description: "Any condition must match" },
-  { value: "NotStatement", label: "NOT", description: "Negate a condition" },
+  { value: "ByteMatchStatement", label: "Byte Match", description: "Match strings in request components", doc: "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-byte-match.html" },
+  { value: "GeoMatchStatement", label: "Geo Match", description: "Match by country/region", doc: "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-geo-match.html" },
+  { value: "IPSetReferenceStatement", label: "IP Set", description: "Match IPs from a set", doc: "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-ipset-match.html" },
+  { value: "LabelMatchStatement", label: "Label Match", description: "Match labels from other rules", doc: "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-label-match-statement.html" },
+  { value: "RateBasedStatement", label: "Rate Based", description: "Rate limiting rules", doc: "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-rate-based.html" },
+  { value: "RegexMatchStatement", label: "Regex Match", description: "Match regex patterns", doc: "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-regex-match.html" },
+  { value: "SizeConstraintStatement", label: "Size Constraint", description: "Check request component size", doc: "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-size-constraint-match.html" },
+  { value: "SqliMatchStatement", label: "SQL Injection", description: "Detect SQL injection attacks", doc: "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-sqli-match.html" },
+  { value: "XssMatchStatement", label: "XSS Match", description: "Detect cross-site scripting", doc: "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-xss-match.html" },
+  { value: "AndStatement", label: "AND", description: "All conditions must match", doc: "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statements-logical.html" },
+  { value: "OrStatement", label: "OR", description: "Any condition must match", doc: "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statements-logical.html" },
+  { value: "NotStatement", label: "NOT", description: "Negate a condition", doc: "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statements-logical.html" },
 ] as const;
 
 const FIELD_TO_MATCH_OPTIONS = [
@@ -906,6 +906,9 @@ export const RuleBuilder: React.FC<RuleBuilderProps> = ({ rule, onSave, onCancel
                   ))}
                 </SelectContent>
               </Select>
+              {(() => { const st = STATEMENT_TYPES.find(s => s.value === statementType); return st?.doc ? (
+                <a href={st.doc} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-400 hover:underline mt-1 inline-block">📖 AWS Docs</a>
+              ) : null; })()}
             </div>
 
             {renderStatementBuilder()}

@@ -338,6 +338,65 @@ export const WAFConfigPanel: React.FC<WAFConfigPanelProps> = ({ wafId, onEditRul
                         {/* Rule Type Info */}
                         <div className="p-2 bg-gray-700 rounded text-sm">
                           <div className="text-gray-400 mb-1">Statement Type</div>
+
+                        {/* Custom Response for BLOCK rules (v2.36) */}
+                        {rule.action === "BLOCK" && (
+                          <details className="group/cr">
+                            <summary className="text-[11px] text-gray-500 cursor-pointer hover:text-gray-300 select-none flex items-center gap-1 mb-1">
+                              <ChevronRight className="w-3 h-3 group-open/cr:rotate-90 transition-transform" />
+                              Custom Response
+                            </summary>
+                            <div className="space-y-2 mt-1">
+                              <div className="flex items-center gap-2">
+                                <Label className="text-[11px] text-gray-400 w-24 shrink-0">Status Code</Label>
+                                <Input
+                                  type="number"
+                                  placeholder="403"
+                                  defaultValue={(rule as unknown as { _customResponseCode?: number })._customResponseCode || ""}
+                                  onChange={(e) => {
+                                    const webacl = wafs.find(w => w.id === wafId);
+                                    if (!webacl) return;
+                                    const code = parseInt(e.target.value);
+                                    if (code >= 200 && code <= 599) {
+                                      const key = `${rule.name}-response`;
+                                      updateWAF(wafId, {
+                                        customResponseBodies: {
+                                          ...webacl.customResponseBodies,
+                                          [key]: {
+                                            contentType: webacl.customResponseBodies?.[key]?.contentType || "TEXT_PLAIN",
+                                            content: webacl.customResponseBodies?.[key]?.content || "Blocked by WAF",
+                                          },
+                                        },
+                                      });
+                                    }
+                                  }}
+                                  className="bg-gray-600 border-gray-500 h-7 text-xs w-20"
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-[11px] text-gray-400">Response Body</Label>
+                                <textarea
+                                  placeholder="Blocked by WAF"
+                                  defaultValue={waf.customResponseBodies?.[`${rule.name}-response`]?.content || ""}
+                                  onChange={(e) => {
+                                    const key = `${rule.name}-response`;
+                                    updateWAF(wafId, {
+                                      customResponseBodies: {
+                                        ...waf.customResponseBodies,
+                                        [key]: {
+                                          contentType: waf.customResponseBodies?.[key]?.contentType || "TEXT_PLAIN",
+                                          content: e.target.value,
+                                        },
+                                      },
+                                    });
+                                  }}
+                                  className="w-full bg-gray-600 border border-gray-500 rounded px-2 py-1 text-xs font-mono min-h-[48px] resize-y mt-1"
+                                />
+                              </div>
+                            </div>
+                          </details>
+                        )}
+
                           <div className="font-mono text-xs max-h-24 overflow-y-auto">
                             {JSON.stringify(rule.statement, null, 2)}
                           </div>
