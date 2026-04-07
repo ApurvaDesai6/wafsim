@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { useWAFSimStore } from "@/store/wafsimStore";
 import { WebACL, Rule, WAFAction, Statement, OverrideAction } from "@/lib/types";
-import { Shield, Plus, Trash2, GripVertical, ChevronDown, ChevronRight, AlertTriangle, Check, X, Edit, Settings, List } from "lucide-react";
+import { Shield, Plus, Trash2, GripVertical, ChevronDown, ChevronRight, AlertTriangle, Check, X, Edit, Settings, List, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -303,8 +303,14 @@ export const WAFConfigPanel: React.FC<WAFConfigPanelProps> = ({ wafId, onEditRul
                           {rule.priority}
                         </Badge>
                         <span className="font-medium text-xs truncate">{rule.name}</span>
-                        <Badge className={`${getActionColor(rule.action)} text-white text-[10px] px-1 shrink-0`}>
-                          {rule.action}
+                        <Badge className={`${getActionColor(
+                          rule.statement.type === "ManagedRuleGroupStatement" 
+                            ? (rule.overrideAction === "COUNT" ? "COUNT" : "BLOCK")
+                            : rule.action
+                        )} text-white text-[10px] px-1 shrink-0`}>
+                          {rule.statement.type === "ManagedRuleGroupStatement" 
+                            ? (rule.overrideAction === "COUNT" ? "COUNT" : "NONE")
+                            : rule.action}
                         </Badge>
                         <span className="text-[10px] text-gray-500 shrink-0 ml-auto">
                           {wcuCost.total}WCU
@@ -313,27 +319,47 @@ export const WAFConfigPanel: React.FC<WAFConfigPanelProps> = ({ wafId, onEditRul
                     </AccordionTrigger>
                     <AccordionContent className="px-3 pb-3">
                       <div className="space-y-3">
-                        {/* Action Selector */}
-                        <div className="flex items-center justify-between">
-                          <Label className="text-sm">Action</Label>
-                          <Select
-                            value={rule.action}
-                            onValueChange={(value: WAFAction) =>
-                              updateRuleInWAF(wafId, rule.name, { action: value })
-                            }
-                          >
-                            <SelectTrigger className="w-32 bg-gray-700 border-gray-600">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="BLOCK">Block</SelectItem>
-                              <SelectItem value="ALLOW">Allow</SelectItem>
-                              <SelectItem value="COUNT">Count</SelectItem>
-                              <SelectItem value="CAPTCHA">CAPTCHA</SelectItem>
-                              <SelectItem value="CHALLENGE">Challenge</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
+                        {/* Action Selector — different for managed rule groups */}
+                        {rule.statement.type === "ManagedRuleGroupStatement" || rule.statement.type === "RuleGroupReferenceStatement" ? (
+                          <div className="flex items-center justify-between">
+                            <Label className="text-sm">Override Action</Label>
+                            <Select
+                              value={rule.overrideAction || "NONE"}
+                              onValueChange={(value: string) =>
+                                updateRuleInWAF(wafId, rule.name, { overrideAction: value as OverrideAction })
+                              }
+                            >
+                              <SelectTrigger className="w-32 bg-gray-700 border-gray-600">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="NONE">None (use group action)</SelectItem>
+                                <SelectItem value="COUNT">Count (override all)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between">
+                            <Label className="text-sm">Action</Label>
+                            <Select
+                              value={rule.action}
+                              onValueChange={(value: WAFAction) =>
+                                updateRuleInWAF(wafId, rule.name, { action: value })
+                              }
+                            >
+                              <SelectTrigger className="w-32 bg-gray-700 border-gray-600">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="BLOCK">Block</SelectItem>
+                                <SelectItem value="ALLOW">Allow</SelectItem>
+                                <SelectItem value="COUNT">Count</SelectItem>
+                                <SelectItem value="CAPTCHA">CAPTCHA</SelectItem>
+                                <SelectItem value="CHALLENGE">Challenge</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
 
                         {/* Rule Type Info */}
                         <div className="p-2 bg-gray-700 rounded text-sm">
@@ -488,15 +514,26 @@ export const WAFConfigPanel: React.FC<WAFConfigPanelProps> = ({ wafId, onEditRul
                             className="border-blue-600 text-blue-400 hover:bg-blue-600 hover:text-white"
                           >
                             <Edit className="w-4 h-4 mr-1" />
-                            Edit Statement
+                            Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              const clone = { ...rule, name: `${rule.name}-copy`, priority: waf.rules.length + 1 };
+                              addRuleToWAF(wafId, clone);
+                            }}
+                            className="border-gray-600 text-gray-400 hover:bg-gray-600 hover:text-white"
+                          >
+                            <Copy className="w-4 h-4 mr-1" />
+                            Clone
                           </Button>
                           <Button
                             size="sm"
                             variant="destructive"
                             onClick={() => removeRuleFromWAF(wafId, rule.name)}
                           >
-                            <Trash2 className="w-4 h-4 mr-1" />
-                            Delete
+                            <Trash2 className="w-4 h-4" />
                           </Button>
                         </div>
                       </div>

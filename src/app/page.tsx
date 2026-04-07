@@ -350,7 +350,23 @@ export default function WAFSimPage() {
 
             {/* Bottom panel content */}
             {bottomTab && (
-              <div style={{ height: bottomHeight }} className="border-t border-gray-800 overflow-hidden">
+              <div style={{ height: bottomHeight }} className="border-t border-gray-800 overflow-hidden relative">
+                {/* Drag resize handle */}
+                <div
+                  className="absolute top-0 left-0 right-0 h-1 cursor-ns-resize hover:bg-blue-500/50 z-10"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    const startY = e.clientY;
+                    const startH = bottomHeight;
+                    const onMove = (ev: MouseEvent) => {
+                      const delta = startY - ev.clientY;
+                      setBottomHeight(Math.max(120, Math.min(600, startH + delta)));
+                    };
+                    const onUp = () => { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); };
+                    document.addEventListener("mousemove", onMove);
+                    document.addEventListener("mouseup", onUp);
+                  }}
+                />
                 {bottomTab === "simulator" && (
                   <TrafficSimulator onSimulate={handleSimulate} />
                 )}

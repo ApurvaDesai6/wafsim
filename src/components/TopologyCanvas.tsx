@@ -178,14 +178,25 @@ const AWSResourceNodeComponent: React.FC<{
             )}
           </div>
         </TooltipTrigger>
-        <TooltipContent side="top" className="bg-gray-800 border-gray-700 text-white">
+        <TooltipContent side="top" className="bg-gray-800 border-gray-700 text-white max-w-[220px]">
           <div className="text-xs">
             <div className="font-semibold">{data.label}</div>
-            <div className="text-gray-400">Type: {data.type}</div>
+            <div className="text-gray-400 mt-0.5">
+              {data.type === "INTERNET" && "Entry point for all web traffic"}
+              {data.type === "CLOUDFRONT" && "CDN — WAF scope: CLOUDFRONT"}
+              {data.type === "ALB" && "Application Load Balancer — WAF scope: REGIONAL"}
+              {data.type === "API_GATEWAY" && "REST API Gateway — WAF scope: REGIONAL"}
+              {data.type === "APPSYNC" && "GraphQL API — WAF scope: REGIONAL"}
+              {data.type === "COGNITO" && "User Pool — WAF scope: REGIONAL"}
+              {data.type === "EC2" && "Compute instance (backend)"}
+              {data.type === "ECS" && "Container service (backend)"}
+              {data.type === "LAMBDA" && "Serverless function (backend)"}
+              {data.type === "S3" && "Object storage (origin)"}
+              {data.type === "WAF" && "Web Application Firewall"}
+            </div>
             {data.wafAttachable && (
-              <div className="text-green-400">WAF can be attached</div>
+              <div className="text-green-400 mt-0.5">✓ WAF attachable</div>
             )}
-            <div className="mt-1 text-blue-400">Double-click for options</div>
           </div>
         </TooltipContent>
       </Tooltip>
