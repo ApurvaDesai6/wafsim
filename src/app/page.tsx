@@ -16,7 +16,7 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   Shield, Play, Download, Upload, Trash2, FileJson, Code, Copy, Check,
-  Settings, X, List, Zap, ChevronDown, ChevronUp,
+  Settings, X, List, Zap, ChevronDown, ChevronUp, Link,
 } from "lucide-react";
 import { evaluateWebACL } from "@/engines/wafEngine";
 import { exportAsWebACLJson, exportAsTerraformHCL, generateCLICommands } from "@/engines/exportEngine";
@@ -56,8 +56,22 @@ export default function WAFSimPage() {
   const [bottomHeight, setBottomHeight] = useState(300);
   const [sampledRequests, setSampledRequests] = useState<SampledRequest[]>([]);
   const [isAnimating, setIsAnimating] = useState(false);
-  const [wafResults, setWafResults] = useState<Map<string, string>>(new Map()); // wafId -> action
-  const [trafficEdges, setTrafficEdges] = useState<Map<string, "passed" | "blocked">>(new Map()); // edgeId -> status
+  const [wafResults, setWafResults] = useState<Map<string, string>>(new Map());
+  const [trafficEdges, setTrafficEdges] = useState<Map<string, "passed" | "blocked">>(new Map());
+
+  // v2.33: Load shared config from URL hash on mount
+  useEffect(() => {
+    try {
+      const hash = window.location.hash.slice(1);
+      if (hash && hash.startsWith("cfg=")) {
+        const decoded = atob(hash.slice(4));
+        importState(decoded);
+        window.history.replaceState(null, "", window.location.pathname);
+        toast.success("Loaded shared configuration");
+      }
+    } catch { /* ignore invalid hash */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Only show WAF config when a WAF is explicitly selected (not fallback)
   const activeWAF = wafs.find(w => w.id === selectedWAFId) || null;
@@ -247,6 +261,7 @@ export default function WAFSimPage() {
           <Button variant="ghost" size="sm" onClick={() => { const i = document.createElement("input"); i.type = "file"; i.accept = ".json"; i.onchange = (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) { const r = new FileReader(); r.onload = (e) => { try { importState(e.target?.result as string); toast.success("Imported"); } catch { toast.error("Failed"); } }; r.readAsText(f); } }; i.click(); }} className="h-7 text-xs text-gray-400 hidden sm:inline-flex"><Upload className="w-3 h-3 mr-1" />Import</Button>
           <Button variant="ghost" size="sm" onClick={() => { const i = document.createElement("input"); i.type = "file"; i.accept = ".json"; i.onchange = (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) { const r = new FileReader(); r.onload = (ev) => { const result = importWebACL(ev.target?.result as string); if (result.success) { toast.success(`Imported WebACL${result.warnings.length ? ` (${result.warnings.length} warnings)` : ""}`); } else { toast.error(result.errors[0] || "Import failed"); } if (result.warnings.length) result.warnings.forEach(w => console.warn("Import warning:", w)); }; r.readAsText(f); } }; i.click(); }} className="h-7 text-xs text-gray-400 hidden sm:inline-flex"><Shield className="w-3 h-3 mr-1" />Import WebACL</Button>
           <Button variant="ghost" size="sm" onClick={() => setShowExport(true)} className="h-7 text-xs text-gray-400 hidden sm:inline-flex"><Download className="w-3 h-3 mr-1" />Export</Button>
+          <Button variant="ghost" size="sm" onClick={() => { try { const state = exportState(); const encoded = btoa(state); const url = `${window.location.origin}${window.location.pathname}#cfg=${encoded}`; navigator.clipboard.writeText(url); toast.success("Share link copied to clipboard"); } catch { toast.error("Config too large to share via URL"); } }} className="h-7 text-xs text-gray-400 hidden sm:inline-flex"><Link className="w-3 h-3 mr-1" />Share</Button>
           <Button variant="ghost" size="sm" onClick={() => { if (confirm("Reset everything?")) { resetState(); setSampledRequests([]); toast.success("Reset"); } }} className="h-7 text-xs text-red-400"><Trash2 className="w-3 h-3" /></Button>
         </div>
       </header>

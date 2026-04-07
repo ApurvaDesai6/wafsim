@@ -2,7 +2,7 @@
 
 import React from "react";
 import { Rule } from "@/lib/types";
-import { calculateWebACLUWCU, checkWCULimits, MAX_WCU, WARNING_WCU } from "@/engines/wcuCalculator";
+import { calculateWebACLUWCU, checkWCULimits, MAX_WCU, WARNING_WCU, BASE_TIER_WCU } from "@/engines/wcuCalculator";
 import { AlertTriangle, Zap, CheckCircle } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
@@ -69,6 +69,11 @@ export const WCUBudgetMeter: React.FC<WCUBudgetMeterProps> = ({ rules, showDetai
                 value={Math.min(status.percentage, 100)}
                 className="h-2 bg-gray-700"
               />
+              {/* Base tier marker */}
+              <div
+                className="absolute top-0 h-2 w-0.5 bg-blue-400/50"
+                style={{ left: `${(BASE_TIER_WCU / MAX_WCU) * 100}%` }}
+              />
               {/* Warning marker */}
               <div
                 className="absolute top-0 h-2 w-0.5 bg-yellow-400/50"
@@ -82,6 +87,9 @@ export const WCUBudgetMeter: React.FC<WCUBudgetMeterProps> = ({ rules, showDetai
               <div>Used: {total} WCU</div>
               <div>Remaining: {status.remaining} WCU</div>
               <div>Percentage: {status.percentage.toFixed(1)}%</div>
+              {total > BASE_TIER_WCU && total <= MAX_WCU && (
+                <div className="text-blue-400 mt-1">💰 Above {BASE_TIER_WCU} base tier — additional fees apply</div>
+              )}
               {status.status === "exceeded" && (
                 <div className="text-red-400 mt-1">⚠ Exceeds maximum capacity!</div>
               )}

@@ -53,9 +53,14 @@ const TRANSFORMATION_WCU: Record<string, number> = {
 };
 
 /**
- * Maximum WCU for a Web ACL
+ * Maximum WCU for a Web ACL (5,000 per AWS docs; 1,500 included in base pricing)
  */
-export const MAX_WCU = 1500;
+export const MAX_WCU = 5000;
+
+/**
+ * Base pricing tier threshold
+ */
+export const BASE_TIER_WCU = 1500;
 
 /**
  * Warning threshold for WCU
