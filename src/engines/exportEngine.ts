@@ -55,10 +55,10 @@ function convertRuleToJson(rule: Rule): WAFV2RuleJson {
   };
 
   // Handle action based on rule type
-  if (rule.statement.type === "ManagedRuleGroupStatement") {
-    // Managed rule groups use OverrideAction
-    json.OverrideAction = rule.overrideAction
-      ? { [capitalize(rule.overrideAction)]: {} }
+  if (rule.statement.type === "ManagedRuleGroupStatement" || rule.statement.type === "RuleGroupReferenceStatement") {
+    // Managed rule groups and rule group references use OverrideAction (Count or None only)
+    json.OverrideAction = rule.overrideAction === "COUNT"
+      ? { Count: {} }
       : { None: {} };
   } else {
     json.Action = { [capitalize(rule.action)]: {} };
@@ -105,9 +105,10 @@ function convertStatementToJson(statement: Statement): Record<string, unknown> {
         IPSetReferenceStatement: {
           ARN: statement.arn,
           ...(statement.forwardedIPConfig && {
-            ForwardedIPConfig: {
+            IPSetForwardedIPConfig: {
               HeaderName: statement.forwardedIPConfig.headerName,
               FallbackBehavior: statement.forwardedIPConfig.fallbackBehavior,
+              Position: "ANY",
             },
           }),
         },
@@ -276,7 +277,8 @@ function convertFieldToMatchToJson(field: FieldToMatch): Record<string, unknown>
       return { SingleHeader: { Name: field.name } };
     case "ALL_HEADERS":
       return {
-        AllHeaders: {
+        Headers: {
+          MatchPattern: { All: {} },
           MatchScope: field.matchScope || "ALL",
           OversizeHandling: field.oversizeHandling || "CONTINUE",
         },
@@ -288,6 +290,7 @@ function convertFieldToMatchToJson(field: FieldToMatch): Record<string, unknown>
     case "COOKIES":
       return {
         Cookies: {
+          MatchPattern: { All: {} },
           MatchScope: field.matchScope || "ALL",
           OversizeHandling: field.oversizeHandling || "CONTINUE",
         },
@@ -295,8 +298,10 @@ function convertFieldToMatchToJson(field: FieldToMatch): Record<string, unknown>
     case "JSON_BODY":
       return {
         JsonBody: {
+          MatchPattern: { All: {} },
           MatchScope: field.jsonMatchScope || "VALUE",
           InvalidFallbackBehavior: field.invalidFallback || "EVALUATE_AS_STRING",
+          OversizeHandling: field.oversizeHandling || "CONTINUE",
         },
       };
     case "JA3_FINGERPRINT":
@@ -446,8 +451,8 @@ export function exportAsTerraformHCL(
     lines.push(`resource "aws_wafv2_ip_set" "${sanitizeTerraformName(ipSet.name)}" {`);
     lines.push(`  name               = "${ipSet.name}"`);
     lines.push(`  description        = "${ipSet.description || "Created by WAFSim"}"`);
-    lines.push(`  scope              = "${ipSet.scope.toLowerCase()}"`);
-    lines.push(`  ip_address_version = "${ipSet.ipAddressVersion.toLowerCase()}"`);
+    lines.push(`  scope              = "${ipSet.scope}"`);
+    lines.push(`  ip_address_version = "${ipSet.ipAddressVersion}"`);
     lines.push("");
     lines.push("  addresses = [");
     for (const addr of ipSet.addresses) {
@@ -463,7 +468,7 @@ export function exportAsTerraformHCL(
     lines.push(`resource "aws_wafv2_regex_pattern_set" "${sanitizeTerraformName(patternSet.name)}" {`);
     lines.push(`  name        = "${patternSet.name}"`);
     lines.push(`  description = "${patternSet.description || "Created by WAFSim"}"`);
-    lines.push(`  scope       = "${patternSet.scope.toLowerCase()}"`);
+    lines.push(`  scope       = "${patternSet.scope}"`);
     lines.push("");
     lines.push("  regular_expression {");
     for (const pattern of patternSet.regularExpressionList) {
@@ -478,7 +483,7 @@ export function exportAsTerraformHCL(
   lines.push(`resource "aws_wafv2_web_acl" "${sanitizeTerraformName(webACL.name)}" {`);
   lines.push(`  name        = "${webACL.name}"`);
   lines.push(`  description = "${webACL.description || "Created by WAFSim"}"`);
-  lines.push(`  scope       = "${webACL.scope.toLowerCase()}"`);
+  lines.push(`  scope       = "${webACL.scope}"`);
   lines.push("");
 
   // Default action
@@ -578,14 +583,14 @@ function convertStatementToTerraform(
     case "ByteMatchStatement":
       lines.push(`${indent}byte_match_statement {`);
       lines.push(`${indent}  search_string                 = "${escapeTerraformString(statement.searchString)}"`);
-      lines.push(`${indent}  positional_constraint         = "${statement.positionalConstraint.toLowerCase()}"`);
+      lines.push(`${indent}  positional_constraint         = "${statement.positionalConstraint}"`);
       lines.push("");
       lines.push(convertFieldToMatchToTerraform(statement.fieldToMatch as FieldToMatch, `${indent}  `));
       lines.push("");
       for (const transform of statement.textTransformations as TextTransformation[]) {
         lines.push(`${indent}  text_transformation {`);
         lines.push(`${indent}    priority = ${transform.priority}`);
-        lines.push(`${indent}    type     = "${transform.type.toLowerCase()}"`);
+        lines.push(`${indent}    type     = "${transform.type}"`);
         lines.push(`${indent}  }`);
       }
       lines.push(`${indent}}`);
@@ -597,7 +602,7 @@ function convertStatementToTerraform(
       if (statement.forwardedIPConfig) {
         lines.push(`${indent}  forwarded_ip_config {`);
         lines.push(`${indent}    header_name       = "${statement.forwardedIPConfig.headerName}"`);
-        lines.push(`${indent}    fallback_behavior = "${statement.forwardedIPConfig.fallbackBehavior.toLowerCase()}"`);
+        lines.push(`${indent}    fallback_behavior = "${statement.forwardedIPConfig.fallbackBehavior}"`);
         lines.push(`${indent}  }`);
       }
       lines.push(`${indent}}`);
@@ -618,10 +623,25 @@ function convertStatementToTerraform(
         lines.push(`${indent}  version     = "${statement.version}"`);
       }
       if (statement.excludedRules && statement.excludedRules.length > 0) {
-        lines.push(`${indent}  excluded_rule {`);
         for (const rule of statement.excludedRules) {
+          lines.push(`${indent}  excluded_rule {`);
           lines.push(`${indent}    name = "${rule}"`);
+          lines.push(`${indent}  }`);
         }
+      }
+      if (statement.ruleActionOverrides && statement.ruleActionOverrides.length > 0) {
+        for (const override of statement.ruleActionOverrides) {
+          lines.push(`${indent}  rule_action_override {`);
+          lines.push(`${indent}    name = "${override.name}"`);
+          lines.push(`${indent}    action_to_use {`);
+          lines.push(`${indent}      ${override.actionToUse.toLowerCase()} {}`);
+          lines.push(`${indent}    }`);
+          lines.push(`${indent}  }`);
+        }
+      }
+      if (statement.scopeDownStatement) {
+        lines.push(`${indent}  scope_down_statement {`);
+        lines.push(convertStatementToTerraform(statement.scopeDownStatement, `${indent}    `, ipSets));
         lines.push(`${indent}  }`);
       }
       lines.push(`${indent}}`);
@@ -629,8 +649,8 @@ function convertStatementToTerraform(
 
     case "RateBasedStatement":
       lines.push(`${indent}rate_based_statement {`);
-      lines.push(`${indent}  aggregate_key_type = "${statement.aggregateKeyType.toLowerCase()}"`);
-      lines.push(`${indent}  limit              = ${statement.rateLimit}`);
+      lines.push(`${indent}  aggregate_key_type    = "${statement.aggregateKeyType}"`);
+      lines.push(`${indent}  limit                 = ${statement.rateLimit}`);
       lines.push(`${indent}  evaluation_window_sec = ${statement.evaluationWindowSec}`);
       if (statement.scopeDownStatement) {
         lines.push(`${indent}  scope_down_statement {`);
@@ -647,7 +667,7 @@ function convertStatementToTerraform(
       for (const transform of statement.textTransformations as TextTransformation[]) {
         lines.push(`${indent}  text_transformation {`);
         lines.push(`${indent}    priority = ${transform.priority}`);
-        lines.push(`${indent}    type     = "${transform.type.toLowerCase()}"`);
+        lines.push(`${indent}    type     = "${transform.type}"`);
         lines.push(`${indent}  }`);
       }
       lines.push(`${indent}}`);
@@ -659,7 +679,7 @@ function convertStatementToTerraform(
       for (const transform of statement.textTransformations as TextTransformation[]) {
         lines.push(`${indent}  text_transformation {`);
         lines.push(`${indent}    priority = ${transform.priority}`);
-        lines.push(`${indent}    type     = "${transform.type.toLowerCase()}"`);
+        lines.push(`${indent}    type     = "${transform.type}"`);
         lines.push(`${indent}  }`);
       }
       lines.push(`${indent}}`);
@@ -671,8 +691,55 @@ function convertStatementToTerraform(
       for (const transform of statement.textTransformations as TextTransformation[]) {
         lines.push(`${indent}  text_transformation {`);
         lines.push(`${indent}    priority = ${transform.priority}`);
-        lines.push(`${indent}    type     = "${transform.type.toLowerCase()}"`);
+        lines.push(`${indent}    type     = "${transform.type}"`);
         lines.push(`${indent}  }`);
+      }
+      lines.push(`${indent}}`);
+      break;
+
+    case "SizeConstraintStatement":
+      lines.push(`${indent}size_constraint_statement {`);
+      lines.push(`${indent}  comparison_operator = "${statement.comparisonOperator}"`);
+      lines.push(`${indent}  size                = ${statement.size}`);
+      lines.push(convertFieldToMatchToTerraform(statement.fieldToMatch as FieldToMatch, `${indent}  `));
+      for (const transform of statement.textTransformations as TextTransformation[]) {
+        lines.push(`${indent}  text_transformation {`);
+        lines.push(`${indent}    priority = ${transform.priority}`);
+        lines.push(`${indent}    type     = "${transform.type}"`);
+        lines.push(`${indent}  }`);
+      }
+      lines.push(`${indent}}`);
+      break;
+
+    case "RegexPatternSetReferenceStatement":
+      lines.push(`${indent}regex_pattern_set_reference_statement {`);
+      lines.push(`${indent}  arn = "${statement.arn}"`);
+      lines.push(convertFieldToMatchToTerraform(statement.fieldToMatch as FieldToMatch, `${indent}  `));
+      for (const transform of statement.textTransformations as TextTransformation[]) {
+        lines.push(`${indent}  text_transformation {`);
+        lines.push(`${indent}    priority = ${transform.priority}`);
+        lines.push(`${indent}    type     = "${transform.type}"`);
+        lines.push(`${indent}  }`);
+      }
+      lines.push(`${indent}}`);
+      break;
+
+    case "LabelMatchStatement":
+      lines.push(`${indent}label_match_statement {`);
+      lines.push(`${indent}  key   = "${statement.key}"`);
+      lines.push(`${indent}  scope = "${statement.scope}"`);
+      lines.push(`${indent}}`);
+      break;
+
+    case "RuleGroupReferenceStatement":
+      lines.push(`${indent}rule_group_reference_statement {`);
+      lines.push(`${indent}  arn = "${statement.arn}"`);
+      if (statement.excludedRules && statement.excludedRules.length > 0) {
+        for (const rule of statement.excludedRules) {
+          lines.push(`${indent}  excluded_rule {`);
+          lines.push(`${indent}    name = "${rule}"`);
+          lines.push(`${indent}  }`);
+        }
       }
       lines.push(`${indent}}`);
       break;
@@ -732,7 +799,7 @@ function convertFieldToMatchToTerraform(field: FieldToMatch, indent: string): st
     case "BODY":
       lines.push(`${indent}field_to_match {`);
       lines.push(`${indent}  body {`);
-      lines.push(`${indent}    oversize_handling = "${(field.oversizeHandling || "CONTINUE").toLowerCase()}"`);
+      lines.push(`${indent}    oversize_handling = "${(field.oversizeHandling || "CONTINUE")}"`);
       lines.push(`${indent}  }`);
       lines.push(`${indent}}`);
       break;
@@ -745,6 +812,66 @@ function convertFieldToMatchToTerraform(field: FieldToMatch, indent: string): st
       lines.push(`${indent}field_to_match {`);
       lines.push(`${indent}  single_header {`);
       lines.push(`${indent}    name = "${field.name}"`);
+      lines.push(`${indent}  }`);
+      lines.push(`${indent}}`);
+      break;
+    case "ALL_QUERY_ARGUMENTS":
+      lines.push(`${indent}field_to_match {`);
+      lines.push(`${indent}  all_query_arguments {}`);
+      lines.push(`${indent}}`);
+      break;
+    case "SINGLE_QUERY_ARGUMENT":
+      lines.push(`${indent}field_to_match {`);
+      lines.push(`${indent}  single_query_argument {`);
+      lines.push(`${indent}    name = "${field.name}"`);
+      lines.push(`${indent}  }`);
+      lines.push(`${indent}}`);
+      break;
+    case "ALL_HEADERS":
+      lines.push(`${indent}field_to_match {`);
+      lines.push(`${indent}  headers {`);
+      lines.push(`${indent}    match_pattern {`);
+      lines.push(`${indent}      all {}`);
+      lines.push(`${indent}    }`);
+      lines.push(`${indent}    match_scope       = "${field.matchScope || "ALL"}"`);
+      lines.push(`${indent}    oversize_handling = "${field.oversizeHandling || "CONTINUE"}"`);
+      lines.push(`${indent}  }`);
+      lines.push(`${indent}}`);
+      break;
+    case "COOKIES":
+      lines.push(`${indent}field_to_match {`);
+      lines.push(`${indent}  cookies {`);
+      lines.push(`${indent}    match_pattern {`);
+      lines.push(`${indent}      all {}`);
+      lines.push(`${indent}    }`);
+      lines.push(`${indent}    match_scope       = "${field.matchScope || "ALL"}"`);
+      lines.push(`${indent}    oversize_handling = "${field.oversizeHandling || "CONTINUE"}"`);
+      lines.push(`${indent}  }`);
+      lines.push(`${indent}}`);
+      break;
+    case "JSON_BODY":
+      lines.push(`${indent}field_to_match {`);
+      lines.push(`${indent}  json_body {`);
+      lines.push(`${indent}    match_pattern {`);
+      lines.push(`${indent}      all {}`);
+      lines.push(`${indent}    }`);
+      lines.push(`${indent}    match_scope                = "${field.jsonMatchScope || "VALUE"}"`);
+      lines.push(`${indent}    invalid_fallback_behavior = "${field.invalidFallback || "EVALUATE_AS_STRING"}"`);
+      lines.push(`${indent}    oversize_handling          = "${field.oversizeHandling || "CONTINUE"}"`);
+      lines.push(`${indent}  }`);
+      lines.push(`${indent}}`);
+      break;
+    case "JA3_FINGERPRINT":
+      lines.push(`${indent}field_to_match {`);
+      lines.push(`${indent}  ja3_fingerprint {`);
+      lines.push(`${indent}    fallback_behavior = "${field.fallbackBehavior || "MATCH"}"`);
+      lines.push(`${indent}  }`);
+      lines.push(`${indent}}`);
+      break;
+    case "HEADER_ORDER":
+      lines.push(`${indent}field_to_match {`);
+      lines.push(`${indent}  header_order {`);
+      lines.push(`${indent}    oversize_handling = "${field.oversizeHandling || "CONTINUE"}"`);
       lines.push(`${indent}  }`);
       lines.push(`${indent}}`);
       break;
