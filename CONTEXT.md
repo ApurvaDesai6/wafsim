@@ -187,14 +187,17 @@ git checkout v2-improvements
 
 > Update this section at the end of each working session.
 
-**Date**: April 6, 2026
-**Version**: v2.18
+**Date**: April 7, 2026
+**Version**: v2.33
 **What was done**:
-- Fixed traffic flow cascade: BFS traversal propagates block status to ALL downstream nodes
-- Deployed to Vercel (free tier) after EC2 was locked down by sev2 Epoxy Mitigations
-- Updated Route 53 DNS: wafsim.apurvad.xyz CNAME → Vercel
-- Submitted SPARK tool intake form
-- Created Slack channel for SXO team visibility
-- Established 2-items/day improvement schedule through April 18
+- v2.19-2.20: Export engine accuracy audit (JSON + Terraform HCL) — all 14 statement types, correct API schema
+- v2.21-2.22: AMR sub-rule listing with per-rule action override UI
+- v2.23-2.24: Import WebACL JSON engine with full validation + error handling
+- v2.25-2.26: Label propagation visualization in trace + scope-down statement UI for rate-based rules
+- v2.27: Text transformation chain visualization (before → after display)
+- v2.28-2.31: Already implemented in earlier versions (regex/IP set mgmt, batch test, attack presets)
+- v2.32: WCU calculator audit — fixed MAX_WCU to 5000, added base tier pricing indicator
+- v2.33: Shareable configs via URL hash encoding (#cfg=base64)
+- Deployed to Vercel, DNS updated, all auto-deploying from main branch
 
-**Next up**: v2.19 (export JSON audit) and v2.20 (Terraform HCL nested statement fix)
+**Next up**: v2.34+ (keyboard shortcuts, accessibility, performance, custom response bodies, multi-WebACL comparison, docs, edge case sweep, polish)
