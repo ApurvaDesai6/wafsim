@@ -238,6 +238,27 @@ export default function WAFSimPage() {
     setTimeout(() => setCopied(null), 2000);
   };
 
+  // v2.34: Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      switch (e.key.toLowerCase()) {
+        case "r": e.preventDefault(); handleSimulate(); break;
+        case "e": e.preventDefault(); setShowExport(true); break;
+        case "s":
+          e.preventDefault();
+          try { const s = exportState(); navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}#cfg=${btoa(s)}`); toast.success("Share link copied"); }
+          catch { toast.error("Config too large to share"); }
+          break;
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [handleSimulate, exportState]);
+
   // Determine right panel state
   const selectedNode = nodes.find(n => n.id === selectedNodeId);
   const nodeHasWAF = selectedNode ? edges.some(e => e.target === selectedNodeId && e.wafId) : false;
@@ -246,7 +267,7 @@ export default function WAFSimPage() {
   return (
     <div className="h-screen flex flex-col bg-gray-950 text-white overflow-hidden">
       {/* Header */}
-      <header className="h-11 border-b border-gray-800 flex items-center justify-between px-3 md:px-4 bg-gray-900 shrink-0">
+      <header role="banner" aria-label="WAFSim toolbar" className="h-11 border-b border-gray-800 flex items-center justify-between px-3 md:px-4 bg-gray-900 shrink-0">
         <div className="flex items-center gap-2">
           <Shield className="w-5 h-5 text-red-500" />
           <span className="text-base font-bold hidden sm:inline">AWS WAFSim</span>
@@ -257,17 +278,18 @@ export default function WAFSimPage() {
           <a href="https://github.com/ApurvaDesai6/wafsim" target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center h-7 px-2 text-xs text-gray-400 hover:text-white rounded-md hover:bg-gray-800 transition-colors">
             <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
           </a>
-          <Button variant="ghost" size="sm" onClick={() => setShowResources(true)} className="h-7 text-xs text-gray-400 hidden md:inline-flex"><Settings className="w-3 h-3 mr-1" />Resources</Button>
-          <Button variant="ghost" size="sm" onClick={() => { const i = document.createElement("input"); i.type = "file"; i.accept = ".json"; i.onchange = (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) { const r = new FileReader(); r.onload = (e) => { try { importState(e.target?.result as string); toast.success("Imported"); } catch { toast.error("Failed"); } }; r.readAsText(f); } }; i.click(); }} className="h-7 text-xs text-gray-400 hidden sm:inline-flex"><Upload className="w-3 h-3 mr-1" />Import</Button>
-          <Button variant="ghost" size="sm" onClick={() => { const i = document.createElement("input"); i.type = "file"; i.accept = ".json"; i.onchange = (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) { const r = new FileReader(); r.onload = (ev) => { const result = importWebACL(ev.target?.result as string); if (result.success) { toast.success(`Imported WebACL${result.warnings.length ? ` (${result.warnings.length} warnings)` : ""}`); } else { toast.error(result.errors[0] || "Import failed"); } if (result.warnings.length) result.warnings.forEach(w => console.warn("Import warning:", w)); }; r.readAsText(f); } }; i.click(); }} className="h-7 text-xs text-gray-400 hidden sm:inline-flex"><Shield className="w-3 h-3 mr-1" />Import WebACL</Button>
-          <Button variant="ghost" size="sm" onClick={() => setShowExport(true)} className="h-7 text-xs text-gray-400 hidden sm:inline-flex"><Download className="w-3 h-3 mr-1" />Export</Button>
-          <Button variant="ghost" size="sm" onClick={() => { try { const state = exportState(); const encoded = btoa(state); const url = `${window.location.origin}${window.location.pathname}#cfg=${encoded}`; navigator.clipboard.writeText(url); toast.success("Share link copied to clipboard"); } catch { toast.error("Config too large to share via URL"); } }} className="h-7 text-xs text-gray-400 hidden sm:inline-flex"><Link className="w-3 h-3 mr-1" />Share</Button>
-          <Button variant="ghost" size="sm" onClick={() => { if (confirm("Reset everything?")) { resetState(); setSampledRequests([]); toast.success("Reset"); } }} className="h-7 text-xs text-red-400"><Trash2 className="w-3 h-3" /></Button>
+          <Button variant="ghost" size="sm" aria-label="Manage IP sets and regex patterns" onClick={() => setShowResources(true)} className="h-7 text-xs text-gray-400 hidden md:inline-flex"><Settings className="w-3 h-3 mr-1" />Resources</Button>
+          <Button variant="ghost" size="sm" aria-label="Import WAFSim state from file" onClick={() => { const i = document.createElement("input"); i.type = "file"; i.accept = ".json"; i.onchange = (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) { const r = new FileReader(); r.onload = (e) => { try { importState(e.target?.result as string); toast.success("Imported"); } catch { toast.error("Failed"); } }; r.readAsText(f); } }; i.click(); }} className="h-7 text-xs text-gray-400 hidden sm:inline-flex"><Upload className="w-3 h-3 mr-1" />Import</Button>
+          <Button variant="ghost" size="sm" aria-label="Import AWS WebACL JSON" onClick={() => { const i = document.createElement("input"); i.type = "file"; i.accept = ".json"; i.onchange = (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) { const r = new FileReader(); r.onload = (ev) => { const result = importWebACL(ev.target?.result as string); if (result.success) { toast.success(`Imported WebACL${result.warnings.length ? ` (${result.warnings.length} warnings)` : ""}`); } else { toast.error(result.errors[0] || "Import failed"); } if (result.warnings.length) result.warnings.forEach(w => console.warn("Import warning:", w)); }; r.readAsText(f); } }; i.click(); }} className="h-7 text-xs text-gray-400 hidden sm:inline-flex"><Shield className="w-3 h-3 mr-1" />Import WebACL</Button>
+          <Button variant="ghost" size="sm" aria-label="Export configuration (Ctrl+E)" onClick={() => setShowExport(true)} className="h-7 text-xs text-gray-400 hidden sm:inline-flex"><Download className="w-3 h-3 mr-1" />Export</Button>
+          <Button variant="ghost" size="sm" aria-label="Copy shareable link (Ctrl+S)" onClick={() => { try { const state = exportState(); const encoded = btoa(state); const url = `${window.location.origin}${window.location.pathname}#cfg=${encoded}`; navigator.clipboard.writeText(url); toast.success("Share link copied to clipboard"); } catch { toast.error("Config too large to share via URL"); } }} className="h-7 text-xs text-gray-400 hidden sm:inline-flex"><Link className="w-3 h-3 mr-1" />Share</Button>
+          <Button variant="ghost" size="sm" aria-label="Reset all configuration" onClick={() => { if (confirm("Reset everything?")) { resetState(); setSampledRequests([]); toast.success("Reset"); } }} className="h-7 text-xs text-red-400"><Trash2 className="w-3 h-3" /></Button>
+          <Button variant="ghost" size="sm" aria-label="Keyboard shortcuts" onClick={() => toast.info("⌨️ Ctrl+R: Run • Ctrl+E: Export • Ctrl+S: Share")} className="h-7 text-xs text-gray-500 hidden sm:inline-flex" title="Keyboard shortcuts">?</Button>
         </div>
       </header>
 
       {/* Main area */}
-      <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
+      <main role="main" aria-label="WAF simulation workspace" className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
         {/* Left: Topology + Bottom Panel */}
         <div className="flex-1 flex flex-col min-w-0">
           {/* Topology Canvas */}
@@ -311,7 +333,7 @@ export default function WAFSimPage() {
                       ⏹ Stop
                     </Button>
                   )}
-                  <Button size="sm" onClick={handleSimulate} disabled={isSimulating} className="h-8 text-sm bg-green-700 hover:bg-green-600 px-5">
+                  <Button size="sm" onClick={handleSimulate} disabled={isSimulating} aria-label="Run simulation (Ctrl+R)" className="h-8 text-sm bg-green-700 hover:bg-green-600 px-5">
                     <Play className="w-4 h-4 mr-1.5" />{isSimulating ? "Running..." : "Run Test"}
                   </Button>
                 </>
@@ -419,7 +441,7 @@ export default function WAFSimPage() {
             <Shield className="w-4 h-4" />
           </button>
         )}
-      </div>
+      </main>
 
       {/* Rule Builder */}
       <Dialog open={showRuleBuilder} onOpenChange={setShowRuleBuilder}>
