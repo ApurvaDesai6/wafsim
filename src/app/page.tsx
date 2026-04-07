@@ -312,11 +312,12 @@ export default function WAFSimPage() {
           {/* Bottom Panel Bar */}
           <div className="border-t border-gray-700 bg-gray-900 shrink-0">
             <div className="flex items-center h-11 px-3 gap-2">
-              {(["simulator", "results", "logs"] as const).map(tab => (
+              {(["simulator", "results", "compare", "logs"] as const).map(tab => (
                 <button key={tab} onClick={() => setBottomTab(bottomTab === tab ? null : tab)}
                   className={`px-3 py-1.5 text-sm font-medium rounded transition-colors ${bottomTab === tab ? "bg-gray-700 text-white" : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"}`}>
                   {tab === "simulator" && "⚡ Simulate"}
                   {tab === "results" && <>Results {evaluationResult && <Badge className={`ml-1.5 text-[10px] px-1.5 py-0 ${evaluationResult.finalAction === "BLOCK" ? "bg-red-600" : evaluationResult.finalAction === "ALLOW" ? "bg-green-600" : "bg-yellow-600"}`}>{evaluationResult.finalAction}</Badge>}</>}
+                  {tab === "compare" && <>Compare {wafs.length > 1 && <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0">{wafs.length} WAFs</Badge>}</>}
                   {tab === "logs" && <>Sampled Requests {sampledRequests.length > 0 && <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0">{sampledRequests.length}</Badge>}</>}
                 </button>
               ))}
@@ -355,6 +356,39 @@ export default function WAFSimPage() {
                   ) : (
                     <div className="h-full flex items-center justify-center text-gray-500 text-sm">Run a simulation to see results</div>
                   )
+                )}
+                {bottomTab === "compare" && (
+                  <div className="h-full overflow-auto p-3">
+                    {wafs.length === 0 ? (
+                      <div className="h-full flex items-center justify-center text-gray-500 text-sm">Add WAFs to compare evaluation results</div>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="text-xs text-gray-400 mb-2">Current request evaluated against all {wafs.length} WebACL{wafs.length > 1 ? "s" : ""}:</div>
+                        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(wafs.length, 4)}, 1fr)` }}>
+                          {wafs.map(waf => {
+                            const result = evaluateWebACL(currentRequest, waf, { ipSets, regexPatternSets });
+                            return (
+                              <div key={waf.id} className="bg-gray-800 rounded-lg p-3 border border-gray-700">
+                                <div className="font-medium text-sm truncate mb-2">{waf.name}</div>
+                                <div className={`text-lg font-bold ${result.finalAction === "BLOCK" ? "text-red-400" : result.finalAction === "ALLOW" ? "text-green-400" : "text-yellow-400"}`}>
+                                  {result.finalAction}
+                                </div>
+                                <div className="text-[10px] text-gray-500 mt-1">
+                                  {result.terminatingRule ? `by: ${result.terminatingRule.rule.name}` : "Default action"}
+                                </div>
+                                <div className="text-[10px] text-gray-500">
+                                  {result.ruleTrace.filter(t => t.matched).length}/{result.ruleTrace.length} rules matched
+                                </div>
+                                {result.labelsApplied.length > 0 && (
+                                  <div className="text-[10px] text-blue-400 mt-1">{result.labelsApplied.length} labels</div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )}
                 {bottomTab === "logs" && (
                   <div className="h-full overflow-auto">
