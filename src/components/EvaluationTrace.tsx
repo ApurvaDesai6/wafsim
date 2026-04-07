@@ -240,7 +240,7 @@ export const EvaluationTrace: React.FC<EvaluationTraceProps> = ({ result }) => {
                     </div>
                   )}
 
-                  {/* Matched Content */}
+                  {/* Matched Content & Transformation Chain */}
                   {trace.matchedContent && (
                     <div>
                       <span className="text-sm text-gray-400">Matched Content:</span>
@@ -251,13 +251,17 @@ export const EvaluationTrace: React.FC<EvaluationTraceProps> = ({ result }) => {
                     </div>
                   )}
 
-                  {/* Transformed Content */}
                   {trace.transformedContent && trace.transformedContent !== trace.matchedContent && (
-                    <div>
-                      <span className="text-sm text-gray-400">After Transformations:</span>
-                      <div className="mt-1 p-2 bg-gray-700 rounded font-mono text-xs overflow-x-auto">
-                        {trace.transformedContent.substring(0, 200)}
-                        {trace.transformedContent.length > 200 && "..."}
+                    <div className="space-y-1">
+                      <span className="text-sm text-gray-400">Transformation Chain:</span>
+                      <div className="flex items-center gap-2 text-xs">
+                        <div className="p-1.5 bg-gray-700 rounded font-mono overflow-x-auto max-w-[45%] truncate" title={trace.matchedContent || ""}>
+                          {(trace.matchedContent || "").substring(0, 80)}
+                        </div>
+                        <span className="text-gray-500 shrink-0">→</span>
+                        <div className="p-1.5 bg-green-900/30 border border-green-500/20 rounded font-mono overflow-x-auto max-w-[45%] truncate" title={trace.transformedContent}>
+                          {trace.transformedContent.substring(0, 80)}
+                        </div>
                       </div>
                     </div>
                   )}

@@ -363,15 +363,33 @@ export function applyTransformations(
   input: string,
   transformations: TextTransformation[]
 ): string {
-  // Sort by priority (lowest first)
   const sorted = [...transformations].sort((a, b) => a.priority - b.priority);
-
   let result = input;
   for (const transformation of sorted) {
     result = applyTransformation(result, transformation.type);
   }
-
   return result;
+}
+
+/**
+ * Apply transformations and return step-by-step chain for visualization
+ */
+export function applyTransformationsWithChain(
+  input: string,
+  transformations: TextTransformation[]
+): { result: string; chain: Array<{ type: string; before: string; after: string }> } {
+  const sorted = [...transformations].sort((a, b) => a.priority - b.priority);
+  const chain: Array<{ type: string; before: string; after: string }> = [];
+  let result = input;
+  for (const transformation of sorted) {
+    if (transformation.type === "NONE") continue;
+    const before = result;
+    result = applyTransformation(result, transformation.type);
+    if (before !== result) {
+      chain.push({ type: transformation.type, before, after: result });
+    }
+  }
+  return { result, chain };
 }
 
 /**
