@@ -2,6 +2,23 @@
 
 All notable changes to WAFSim are captured here.
 
+## [3.0.0-rc.5] — 2026-05-05
+
+Animation polish — rule trace cards now fade in with a staggered scanning
+effect, visualizing rule evaluation order as described in the v3 spec.
+
+### Added
+- **Staggered rule-scanning animation in EvaluationTrace**. Each rule
+  trace card fades in with a small leftward offset and a per-index delay
+  (capped at 600ms). Creates the "rules evaluating one-by-one" visual
+  the v3 spec described, without needing separate animation state
+  machinery. Uses Framer Motion which was already in the deps.
+
+### Notes
+- Remaining Task 9 polish items (per-WAF counter badge, WAF scanning
+  highlight on the topology canvas) require deeper canvas integration
+  and are documented as deferred in `docs/GAP_ANALYSIS.md`.
+
 ## [3.0.0-rc.4] — 2026-05-05
 
 Nested rule builder UI + 3-level round-trip tests. This closes the last

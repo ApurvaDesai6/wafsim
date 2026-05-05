@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { motion } from "framer-motion";
 import { EvaluationResult, RuleTrace } from "@/lib/types";
 import {
   Check,
@@ -120,8 +121,13 @@ export const EvaluationTrace: React.FC<EvaluationTraceProps> = ({ result }) => {
               : [];
 
             return (
-            <Card
+            <motion.div
               key={trace.ruleName}
+              initial={{ opacity: 0, x: -8 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: Math.min(index * 0.04, 0.6), duration: 0.2 }}
+            >
+            <Card
               className={cn(
                 "bg-gray-800 border cursor-pointer transition-all",
                 trace.matched ? "border-gray-600" : "border-gray-700",
@@ -248,6 +254,7 @@ export const EvaluationTrace: React.FC<EvaluationTraceProps> = ({ result }) => {
                 </CardContent>
               )}
             </Card>
+            </motion.div>
           );
           })}
         </div>
