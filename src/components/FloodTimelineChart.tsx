@@ -29,7 +29,8 @@ export function FloodTimelineChart({ result, className = "" }: Props) {
   // Downsample timeline to <= 120 bars for rendering sanity
   const maxBars = 120;
   const step = Math.max(1, Math.ceil(result.timeline.length / maxBars));
-  const bars = [];
+  type Bar = { allowed: number; blocked: number; total: number; elapsed: number; currentRate: number };
+  const bars: Bar[] = [];
   for (let i = 0; i < result.timeline.length; i += step) {
     const slice = result.timeline.slice(i, i + step);
     const blocked = slice.filter((t) => t.action === "BLOCK").length;

@@ -154,7 +154,7 @@ describe("scoreWebACL — RateLimiting category", () => {
           action: "BLOCK",
           statement: {
             type: "RateBasedStatement",
-            limit: 50, // out of typical range → only +10, not +5
+            rateLimit: 50, // out of typical range → only +10, not +5
             aggregateKeyType: "IP",
           } as Rule["statement"],
         }),
@@ -177,7 +177,7 @@ describe("scoreWebACL — RateLimiting category", () => {
           action: "BLOCK",
           statement: {
             type: "RateBasedStatement",
-            limit: 100,
+            rateLimit: 100,
             aggregateKeyType: "IP",
             scopeDownStatement: {
               type: "ByteMatchStatement",
@@ -320,7 +320,7 @@ describe("scoreWebACL — end-to-end production-ready WebACL", () => {
           ruleLabels: ["myapp:rate:login"],
           statement: {
             type: "RateBasedStatement",
-            limit: 100,
+            rateLimit: 100,
             aggregateKeyType: "IP",
             scopeDownStatement: {
               type: "ByteMatchStatement",

@@ -339,7 +339,8 @@ function scoreRateLimiting(webACL: WebACL): CategoryScore {
   // +5 for reasonable limit values (100–10,000 per 5 min = not too low, not too high)
   const anyReasonableLimit = rateRules.some((r) => {
     if (r.statement.type !== "RateBasedStatement") return false;
-    const limit = (r.statement as { limit?: number }).limit;
+    // Canonical field name is rateLimit per src/lib/types.ts
+    const limit = (r.statement as { rateLimit?: number }).rateLimit;
     return typeof limit === "number" && limit >= 100 && limit <= 10_000;
   });
   if (anyReasonableLimit) {
