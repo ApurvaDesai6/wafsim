@@ -2,6 +2,60 @@
 
 All notable changes to WAFSim are captured here.
 
+## [3.0.0-rc.3] — 2026-05-05
+
+Schema conformance fixes, flood simulator upgrade, topology validator UI
+wire-in, and an honest v3 gap analysis doc.
+
+### Fixed (export engine schema bugs)
+- **`RateBasedStatement` field name**: was `RateLimit`, AWS API expects `Limit`.
+  Verified against [API_RateBasedStatement.html](https://docs.aws.amazon.com/waf/latest/APIReference/API_RateBasedStatement.html).
+  Any WebACL JSON exported from rc.1/rc.2 with a rate-based rule would have
+  been rejected by `aws wafv2 create-web-acl`. Fixed now.
+- **`RateBasedStatement` custom keys field**: was `AggregateKeys`, AWS API
+  expects `CustomKeys`. Same source. Same impact. Fixed now.
+- **Terraform `aws_wafv2_regex_pattern_set`**: was emitting a single
+  `regular_expression` block containing multiple `regex_string` assignments
+  (invalid HCL schema). Fixed to emit one block per pattern, per the
+  Hashicorp provider schema.
+
+### Added
+- **TopologyIssuesBanner** (`src/components/TopologyIssuesBanner.tsx`).
+  Floats over the canvas top-left, reads store state, runs `validateTopology`
+  in memo, and shows findings with click-to-focus-node pills. Silent when
+  the topology is clean, error/warning colored when issues exist.
+- **FloodTimelineChart** (`src/components/FloodTimelineChart.tsx`, 168 LOC).
+  Visualizes flood simulation output with stacked allowed/blocked bars,
+  request-rate overlay line, trigger annotation, and per-bucket counters.
+- **Real `simulateFlood` engine wired into TrafficSimulator's flood tab**
+  (it previously used a hand-rolled `evaluateBatch` loop). Rate limiting now
+  reflects the authoritative rate tracking semantics that match
+  `wafEngine.ts`. Removed the "In Development" badge.
+- **Export engine schema conformance test suite** (`exportEngine.test.ts`,
+  14 tests). Covers all three schema bugs above plus CLI command sequence
+  dependency ordering, IP set / regex pattern set JSON shape, and core
+  WebACL JSON structure.
+- **Rate engine tests** (`rateEngine.test.ts`, 6 tests). Verify
+  `simulateFlood` produces an ordered timeline, detects trigger time,
+  respects above/below-threshold traffic patterns, and reacts correctly to
+  IP variation (distributed attack simulation).
+- **`docs/GAP_ANALYSIS.md`**. Honest state-of-the-project assessment: what
+  the v3 spec asked for, what shipped, deliberate deviations with
+  justifications, and prioritized remaining roadmap.
+
+### Changed
+- Test count grew to **147** (from 127 in rc.2).
+- `/api/tests` route and in-app help text now mention the posture score
+  and topology validator features.
+
+### Notes
+- `main` still untouched at v2.49 (deployed at wafsim.apurvad.xyz). All
+  rc.1/rc.2/rc.3 work is on the `v3` branch.
+- See `docs/GAP_ANALYSIS.md` for explicitly-deferred work: 3-level nested
+  rule builder UI, inline canvas error decorations, per-statement-type WCU
+  doc audit, scanning animation polish, live `aws wafv2 check-capacity`
+  CI validation.
+
 ## [3.0.0-rc.2] — 2026-05-05
 
 Substantive engine + UX upgrade on top of rc.1. Inspired by patterns from

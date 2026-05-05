@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { useWAFSimStore } from "@/store/wafsimStore";
-import { HttpRequest, HTTPMethod, HTTPProtocol, AttackPreset } from "@/lib/types";
+import { HttpRequest, HTTPMethod, HTTPProtocol, AttackPreset, FloodSimulationResult } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,6 +13,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Play, Plus, Trash2, Zap } from "lucide-react";
 import { evaluateWebACL, evaluateBatch } from "@/engines/wafEngine";
+import { simulateFlood } from "@/engines/rateEngine";
+import { FloodTimelineChart } from "@/components/FloodTimelineChart";
 
 const ATTACK_PRESETS: AttackPreset[] = [
   { id: "sqli-basic", name: "SQL Injection (Basic)", description: "' OR '1'='1 in query param", category: "sqli", request: { method: "GET", uri: "/api/users?id=1' OR '1'='1", sourceIP: "192.168.1.100", country: "US" } },
@@ -41,7 +43,7 @@ export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate }
   const [activeSection, setActiveSection] = useState<"form" | "presets" | "batch" | "flood">("form");
   const [batchResults, setBatchResults] = useState<Array<{ name: string; category: string; action: string }> | null>(null);
   const [floodConfig, setFloodConfig] = useState({ rps: 50, duration: 60, sourceIPs: 1, uri: "/api/endpoint", method: "GET" as string });
-  const [floodResults, setFloodResults] = useState<{ total: number; allowed: number; blocked: number; triggeredAt: number | null } | null>(null);
+  const [floodResult, setFloodResult] = useState<FloodSimulationResult | null>(null);
 
   const activeWAF = wafs.length > 0 ? wafs[0] : null;
 
@@ -77,44 +79,34 @@ export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate }
 
   const runFlood = () => {
     if (!activeWAF) return;
-    const totalReqs = floodConfig.rps * floodConfig.duration;
-    const reqsPerIP = Math.ceil(totalReqs / floodConfig.sourceIPs);
-    const intervalMs = Math.max(1, Math.floor(1000 / floodConfig.rps));
-
-    // Generate requests
-    const requests: HttpRequest[] = [];
-    for (let i = 0; i < Math.min(totalReqs, 2000); i++) { // Cap at 2000 for performance
-      const ipIndex = i % floodConfig.sourceIPs;
-      requests.push({
-        protocol: "HTTP/1.1",
-        method: floodConfig.method as any,
-        uri: floodConfig.uri,
-        queryParams: {},
-        headers: [{ name: "Host", value: "example.com" }, { name: "User-Agent", value: "Mozilla/5.0" }],
-        body: "",
-        bodyEncoding: "none",
-        contentType: "application/json",
-        sourceIP: `192.168.1.${100 + ipIndex}`,
-        country: "US",
-      });
-    }
-
-    const results = evaluateBatch(requests, activeWAF, {
-      ipSets, regexPatternSets,
-      requestInterval: intervalMs,
+    const baseRequest: HttpRequest = {
+      protocol: "HTTP/1.1",
+      method: floodConfig.method as HTTPMethod,
+      uri: floodConfig.uri,
+      queryParams: {},
+      headers: [
+        { name: "Host", value: "example.com" },
+        { name: "User-Agent", value: "Mozilla/5.0" },
+      ],
+      body: "",
+      bodyEncoding: "none",
+      contentType: "application/json",
+      sourceIP: "192.168.1.100",
+      country: "US",
+    };
+    // Convert requests-per-second to requests-per-minute for simulateFlood
+    const rpm = floodConfig.rps * 60;
+    const durationMin = Math.max(1 / 60, floodConfig.duration / 60);
+    const result = simulateFlood(baseRequest, activeWAF, rpm, durationMin, {
+      ipSets: ipSets.map((s) => ({ arn: s.arn, name: s.name, addresses: s.addresses })),
+      regexPatternSets: regexPatternSets.map((s) => ({
+        arn: s.arn,
+        name: s.name,
+        regularExpressionList: s.regularExpressionList,
+      })),
+      varySourceIP: floodConfig.sourceIPs > 1,
     });
-
-    let allowed = 0, blocked = 0, triggeredAt: number | null = null;
-    results.forEach((r, i) => {
-      if (r.finalAction === "BLOCK") {
-        blocked++;
-        if (triggeredAt === null) triggeredAt = i + 1;
-      } else {
-        allowed++;
-      }
-    });
-
-    setFloodResults({ total: results.length, allowed, blocked, triggeredAt });
+    setFloodResult(result);
   };
 
   const addHeader = () => setCurrentRequest({ ...currentRequest, headers: [...(currentRequest.headers || []), { name: "", value: "" }] });
@@ -240,10 +232,7 @@ export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate }
         )}
         {activeSection === "flood" && (
           <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-[9px] text-yellow-500 border-yellow-600 shrink-0">In Development</Badge>
-              <p className="text-[11px] text-gray-400">Simulate volumetric attacks and rate-based rules.</p>
-            </div>
+            <p className="text-[11px] text-gray-400">Simulate volumetric attacks against rate-based rules. Timeline shows when the rate limit trips.</p>
             <div className="grid grid-cols-5 gap-2">
               <div>
                 <Label className="text-[10px] text-gray-500 uppercase tracking-wider">Req/sec</Label>
@@ -279,18 +268,7 @@ export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate }
                 {floodConfig.rps * floodConfig.duration} total reqs from {floodConfig.sourceIPs} IP{floodConfig.sourceIPs > 1 ? "s" : ""} · {Math.ceil((floodConfig.rps / floodConfig.sourceIPs) * 300)}/5min per IP
               </span>
             </div>
-            {floodResults && (
-              <div className="flex items-center gap-3 text-[11px] bg-gray-800 rounded px-2 py-1.5">
-                <span className="text-green-400">Allowed: {floodResults.allowed}</span>
-                <span className="text-red-400">Blocked: {floodResults.blocked}</span>
-                <span className="text-gray-500">/ {floodResults.total}</span>
-                {floodResults.triggeredAt !== null ? (
-                  <span className="text-orange-400 ml-auto">Rate limit @ req #{floodResults.triggeredAt}</span>
-                ) : (
-                  <span className="text-gray-600 ml-auto">Not triggered</span>
-                )}
-              </div>
-            )}
+            {floodResult && <FloodTimelineChart result={floodResult} className="mt-2" />}
           </div>
         )}
       </div>

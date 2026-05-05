@@ -10,6 +10,7 @@ import { RuleBuilder } from "@/components/RuleBuilder";
 import { ResourceManager } from "@/components/ResourceManager";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PostureScoreBadge } from "@/components/PostureScoreBadge";
+import { TopologyIssuesBanner } from "@/components/TopologyIssuesBanner";
 import { runAllTests } from "@/engines/testSuite";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -359,6 +360,10 @@ export default function WAFSimPage() {
               trafficEdges={trafficEdges}
             />
             </ErrorBoundary>
+            {/* Topology issues banner — floats over the canvas, non-intrusive */}
+            <div className="absolute top-2 left-2 z-20 max-w-sm">
+              <TopologyIssuesBanner />
+            </div>
           </div>
 
           {/* Bottom Panel Bar */}
