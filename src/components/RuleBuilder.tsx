@@ -42,6 +42,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { NestedStatementEditor } from "@/components/NestedStatementEditor";
 
 interface RuleBuilderProps {
   rule?: Rule;
@@ -1009,10 +1010,45 @@ export const RuleBuilder: React.FC<RuleBuilderProps> = ({ rule, onSave, onCancel
                   : "Any statement must match for the rule to trigger"}
               </p>
             </div>
-            
-            <div className="text-center py-4 text-gray-500 border border-dashed border-gray-600 rounded-lg">
-              <p className="text-sm">Nested statement configuration</p>
-              <p className="text-xs mt-1">Add statements from the WAF panel after saving this rule</p>
+
+            <div className="space-y-2">
+              {nestedStatements.map((child, i) => (
+                <NestedStatementEditor
+                  key={i}
+                  statement={child}
+                  depth={1}
+                  onChange={(next) => {
+                    const arr = [...nestedStatements];
+                    if (next === null) arr.splice(i, 1);
+                    else arr[i] = next;
+                    setNestedStatements(arr);
+                  }}
+                />
+              ))}
+              {nestedStatements.length === 0 && (
+                <p className="text-xs text-gray-500 italic">No child statements yet.</p>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() =>
+                  setNestedStatements([
+                    ...nestedStatements,
+                    {
+                      type: "ByteMatchStatement",
+                      searchString: "",
+                      fieldToMatch: { type: "URI_PATH" },
+                      textTransformations: [{ type: "NONE", priority: 0 }],
+                      positionalConstraint: "CONTAINS",
+                    } as Statement,
+                  ])
+                }
+              >
+                <Plus className="w-3 h-3 mr-1" />
+                Add child statement
+              </Button>
             </div>
           </div>
         );
@@ -1025,11 +1061,12 @@ export const RuleBuilder: React.FC<RuleBuilderProps> = ({ rule, onSave, onCancel
                 The rule matches when the inner statement does NOT match
               </p>
             </div>
-            
-            <div className="text-center py-4 text-gray-500 border border-dashed border-gray-600 rounded-lg">
-              <p className="text-sm">Negated statement configuration</p>
-              <p className="text-xs mt-1">Configure the statement to negate after saving this rule</p>
-            </div>
+
+            <NestedStatementEditor
+              statement={notStatement}
+              depth={1}
+              onChange={(next) => setNotStatement(next)}
+            />
           </div>
         );
 

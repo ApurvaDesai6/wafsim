@@ -2,6 +2,41 @@
 
 All notable changes to WAFSim are captured here.
 
+## [3.0.0-rc.4] — 2026-05-05
+
+Nested rule builder UI + 3-level round-trip tests. This closes the last
+significant UX gap from the v3 spec — visual AND/OR/NOT nested rule
+authoring up to 3 levels deep.
+
+### Added
+- **NestedStatementEditor** (`src/components/NestedStatementEditor.tsx`,
+  506 LOC). Recursive statement editor that handles simple statement types
+  inline (ByteMatch, GeoMatch, IPSet, LabelMatch, SizeConstraint, RegexMatch)
+  and recurses for compound AND/OR/NOT up to 3 levels deep. Visual depth
+  is conveyed via colored left border per compound type (AND=blue,
+  OR=emerald, NOT=red) and cycling depth tint. Add/remove controls per
+  child. Type-switch dropdown preserves tree structure.
+- **RuleBuilder integration**: the AND/OR/NOT cases now render
+  NestedStatementEditor instead of the previous "configure after saving"
+  placeholder. Users can author the full nested rule tree inline.
+- **Nested statement round-trip tests** (`nestedStatements.test.ts`,
+  6 tests): 3-level `(NOT geo) AND ((geo AND method) OR uri-contains)`
+  rule is evaluated against 4 representative requests, exported to AWS
+  WAFv2 JSON, imported back, and re-evaluated with identical results.
+  The structural nesting depth is asserted in the exported JSON.
+
+### Changed
+- Test count grew to **153** (from 147 in rc.3).
+
+### Notes
+- Max nesting depth capped at 3 per the v3 spec UX recommendation. The
+  underlying engine handles arbitrary depth (verified by
+  `statementEvaluator.test.ts` which tests 3+ level nesting against the
+  evaluator).
+- Type-switching within the editor creates a fresh default statement of
+  the new type — existing child configuration is intentionally lost on
+  switch to avoid leaving orphaned invalid state.
+
 ## [3.0.0-rc.3] — 2026-05-05
 
 Schema conformance fixes, flood simulator upgrade, topology validator UI
