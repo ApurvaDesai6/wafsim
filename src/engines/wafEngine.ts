@@ -15,6 +15,7 @@ import {
 } from "@/lib/types";
 import { evaluateStatement, EvaluationContext, ManagedRuleGroupModel } from "./statementEvaluator";
 import { MANAGED_RULE_GROUPS } from "@/lib/managedRuleGroups";
+import { calculateRuleWCU as authoritativeCalculateRuleWCU, MAX_WCU, BASE_TIER_WCU } from "./wcuCalculator";
 
 /**
  * Evaluate a WebACL against an HTTP request
@@ -389,16 +390,16 @@ export function validateWebACL(webACL: WebACL): {
     }
     ruleNames.add(rule.name);
 
-    // Calculate WCU for the rule
-    const ruleWcu = calculateRuleWCU(rule);
+    // Use authoritative WCU calculator (matches AWS documented costs)
+    const ruleWcu = authoritativeCalculateRuleWCU(rule).total;
     wcu += ruleWcu;
   }
 
   // Check WCU limit (5000 max, 1500 base pricing tier)
-  if (wcu > 5000) {
-    errors.push(`WCU ${wcu} exceeds maximum of 5000`);
-  } else if (wcu > 1500) {
-    warnings.push(`WCU ${wcu} exceeds base tier (1500), additional fees apply`);
+  if (wcu > MAX_WCU) {
+    errors.push(`WCU ${wcu} exceeds maximum of ${MAX_WCU}`);
+  } else if (wcu > BASE_TIER_WCU) {
+    warnings.push(`WCU ${wcu} exceeds base tier (${BASE_TIER_WCU}), additional fees apply`);
   }
 
   // Check for scope conflicts
@@ -417,80 +418,4 @@ export function validateWebACL(webACL: WebACL): {
     warnings,
     wcu,
   };
-}
-
-/**
- * Calculate WCU for a rule
- */
-function calculateRuleWCU(rule: Rule): number {
-  const statement = rule.statement;
-
-  // Base WCU depends on statement type
-  let baseWcu = 1;
-
-  switch (statement.type) {
-    case "ByteMatchStatement":
-      baseWcu = 3;
-      // Add cost for text transformations
-      const byteMatchStmt = statement as Statement extends infer S ? S extends { type: "ByteMatchStatement" } ? S : never : never;
-      baseWcu += (byteMatchStmt.textTransformations?.length || 0) * 10;
-      break;
-
-    case "GeoMatchStatement":
-      baseWcu = 1;
-      break;
-
-    case "IPSetReferenceStatement":
-      baseWcu = 1;
-      break;
-
-    case "LabelMatchStatement":
-      baseWcu = 1;
-      break;
-
-    case "ManagedRuleGroupStatement":
-      // Use documented WCU for managed rule groups
-      const managedStmt = statement as Statement extends infer S ? S extends { type: "ManagedRuleGroupStatement" } ? S : never : never;
-      const managedGroup = MANAGED_RULE_GROUPS[managedStmt.name];
-      baseWcu = managedGroup?.wcu || 200;
-      break;
-
-    case "RateBasedStatement":
-      baseWcu = 2;
-      break;
-
-    case "RegexMatchStatement":
-      baseWcu = 5;
-      break;
-
-    case "RegexPatternSetReferenceStatement":
-      baseWcu = 5;
-      break;
-
-    case "SizeConstraintStatement":
-      baseWcu = 1;
-      break;
-
-    case "SqliMatchStatement":
-      baseWcu = 20;
-      break;
-
-    case "XssMatchStatement":
-      baseWcu = 20;
-      break;
-
-    case "AndStatement":
-    case "OrStatement":
-      baseWcu = 1;
-      break;
-
-    case "NotStatement":
-      baseWcu = 1;
-      break;
-
-    default:
-      baseWcu = 1;
-  }
-
-  return baseWcu;
 }
