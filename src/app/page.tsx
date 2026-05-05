@@ -9,6 +9,7 @@ import { EvaluationTrace } from "@/components/EvaluationTrace";
 import { RuleBuilder } from "@/components/RuleBuilder";
 import { ResourceManager } from "@/components/ResourceManager";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { PostureScoreBadge } from "@/components/PostureScoreBadge";
 import { runAllTests } from "@/engines/testSuite";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -336,7 +337,7 @@ export default function WAFSimPage() {
           <Button variant="ghost" size="sm" aria-label="Export configuration (Ctrl+E)" onClick={() => setShowExport(true)} className="h-7 text-xs text-gray-400 hidden sm:inline-flex"><Download className="w-3 h-3 mr-1" />Export</Button>
           <Button variant="ghost" size="sm" aria-label="Copy shareable link (Ctrl+S)" onClick={() => { try { const state = exportState(); const encoded = btoa(state); const url = `${window.location.origin}${window.location.pathname}#cfg=${encoded}`; navigator.clipboard.writeText(url); toast.success("Share link copied to clipboard"); } catch { toast.error("Config too large to share via URL"); } }} className="h-7 text-xs text-gray-400 hidden sm:inline-flex"><Link className="w-3 h-3 mr-1" />Share</Button>
           <Button variant="ghost" size="sm" aria-label="Reset all configuration" onClick={() => { if (confirm("Reset everything?")) { resetState(); setSampledRequests([]); toast.success("Reset"); } }} className="h-7 text-xs text-red-400"><Trash2 className="w-3 h-3" /></Button>
-          <Button variant="ghost" size="sm" aria-label="Keyboard shortcuts" onClick={() => toast.info("⌨️ Ctrl+R: Run • Ctrl+E: Export • Ctrl+S: Share")} className="h-7 text-xs text-gray-500 hidden sm:inline-flex" title="Keyboard shortcuts">?</Button>
+          <Button variant="ghost" size="sm" aria-label="Keyboard shortcuts" onClick={() => toast.info("⌨️ Ctrl/⌘+R: Run simulation · Ctrl+E: Export · Ctrl+S: Share link · Click a WAF node to see posture score + findings", { duration: 8000 })} className="h-7 text-xs text-gray-500 hidden sm:inline-flex" title="Keyboard shortcuts">?</Button>
         </div>
       </header>
 
@@ -558,7 +559,12 @@ export default function WAFSimPage() {
             <X className="w-4 h-4" />
           </button>
           {activeWAF ? (
-            <WAFConfigPanel wafId={activeWAF.id} onEditRule={handleEditRule} onCreateRule={handleCreateRule} />
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="px-3 pt-2 pb-0">
+                <PostureScoreBadge webACL={activeWAF} />
+              </div>
+              <WAFConfigPanel wafId={activeWAF.id} onEditRule={handleEditRule} onCreateRule={handleCreateRule} />
+            </div>
           ) : selectedNode?.wafAttachable ? (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
               <Shield className="w-14 h-14 text-green-400/50 mb-4" />

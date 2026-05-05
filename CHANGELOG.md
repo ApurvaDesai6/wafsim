@@ -2,6 +2,56 @@
 
 All notable changes to WAFSim are captured here.
 
+## [3.0.0-rc.2] — 2026-05-05
+
+Substantive engine + UX upgrade on top of rc.1. Inspired by patterns from
+[system-design-simulator](https://github.com/vijaygupta18/system-design-simulator)
+(5-category scoring, Kahn's topological sort, cycle detection) and
+[bytedance/ns-x](https://github.com/bytedance/ns-x) (event-driven
+packet/node/edge model).
+
+### Added
+- **WebACL security posture scorer** (`src/engines/postureScorer.ts`, 621 LOC,
+  13 tests). Scores a WebACL across 5 dimensions (Coverage, Defense, Rate
+  Limiting, Visibility, Hygiene — 20 points each, 100 total) and returns
+  findings with severity + recommendation. Verdicts: *No Protection*,
+  *Minimal*, *Basic*, *Solid*, *Strong*, *Defense in Depth*. Each category
+  awards points for documented best practices and surfaces what's missing.
+- **Topology validator** (`src/engines/topologyValidator.ts`, 262 LOC, 14
+  tests). Pre-simulation static analysis that finds:
+  - Cycles in the topology graph (Kahn's topological sort).
+  - Invalid WAF attachment points (only CloudFront, ALB, API Gateway,
+    AppSync, Cognito User Pool, App Runner, Verified Access — per AWS docs).
+  - Scope mismatches (CLOUDFRONT-scope WAF on REGIONAL resource, or vice versa).
+  - Dangling WAF nodes and dangling edges.
+  - Unreachable nodes (no path from any Internet entry).
+- **PostureScoreBadge component** (`src/components/PostureScoreBadge.tsx`).
+  Compact 5-category breakdown badge, expands to show top findings with
+  severity icons + recommendations. Wired into the right-panel WAF config
+  view — selecting a WAF now shows its live posture score.
+- **Extended vitest suite to 127 tests** (up from 68):
+  - +13 posture scorer tests
+  - +14 topology validator tests
+  - +32 in-app testSuite scenarios (AMR sub-rule coverage + rule ordering)
+    now run under vitest CI via `inAppSuite.test.ts`.
+
+### Changed
+- Help toast now lists all shortcuts accurately (`Ctrl/⌘+R` simulate,
+  `Ctrl+E` export, `Ctrl+S` share) and mentions the new posture score feature.
+- `/api/tests` route updated to use correct field names from `runAllTests`
+  and to return structured sub-rule + ordering results.
+
+### Notes
+- Scorer deliberately opinionated and lenient: score < 20 means no WAF,
+  60+ means basic protection, 80+ means production-appropriate, 95+ means
+  defense-in-depth. Findings include explicit recommendations, not just
+  a number.
+- Topology validator runs in under 1 ms for graphs of up to 100 nodes —
+  safe to run on every state change.
+- Wider UI integration of the topology validator (inline errors on the
+  canvas, badge on the top bar) is the next session's work; the engine is
+  ready to wire in.
+
 ## [3.0.0-rc.1] — 2026-05-05
 
 The v3 release is a stability + credibility pass on the v2.x foundation. Rather
