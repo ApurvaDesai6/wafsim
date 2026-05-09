@@ -620,3 +620,246 @@ function generateSummary(
 
   return parts.join(" ");
 }
+
+// ============================================================================
+// Fleet-level scoring (rc.9) — overall posture across all WebACLs in a
+// topology, plus findings that only make sense at fleet scope (unprotected
+// resources, inconsistent protection, default-action drift).
+//
+// Rationale: a topology with 3 WAFs at 70/70/70 is meaningfully different
+// from 3 at 95/95/20. Per-WebACL scoring can't surface the weakest-link.
+// The fleet view does.
+// ============================================================================
+
+export interface FleetWebACLEntry {
+  id: string;
+  name: string;
+  scope: "CLOUDFRONT" | "REGIONAL";
+  /** Resource IDs this WebACL is currently attached to in the topology. */
+  attachedResourceIds: string[];
+  /** Resource kinds for prettier display ("ALB", "CloudFront", etc.) */
+  attachedResourceKinds: string[];
+  report: PostureReport;
+}
+
+export interface FleetPostureReport {
+  overallScore: number;         // 0-100 (average of per-WebACL scores)
+  overallVerdict: PostureVerdict;
+  webAclCount: number;
+  /** Count of WAF-attachable resources in the topology that have no WebACL. */
+  unprotectedResourceCount: number;
+  /** Per-WebACL breakdown. */
+  perWebAcl: FleetWebACLEntry[];
+  /** Findings that apply across the fleet (not specific to one WebACL). */
+  fleetFindings: PostureFinding[];
+  /** Consolidated findings from individual WebACLs, deduped by title. */
+  consolidatedFindings: PostureFinding[];
+  summary: string;
+}
+
+/**
+ * Fleet-level attachment data so the scorer can reason about topology-level
+ * properties like coverage gaps. The caller is responsible for passing the
+ * topology data in; the scorer doesn't care about node shapes, just the
+ * mapping from WebACL → attached resources.
+ */
+export interface FleetScopingInput {
+  /** All WebACLs in the workspace. */
+  webACLs: WebACL[];
+  /** Per-WebACL: what resources is it attached to? */
+  attachments: Map<string, Array<{ resourceId: string; resourceKind: string }>>;
+  /** WAF-attachable resources across the topology (for coverage-gap detection). */
+  attachableResources: Array<{ resourceId: string; resourceKind: string }>;
+}
+
+export function scoreWebACLFleet(input: FleetScopingInput): FleetPostureReport {
+  const { webACLs, attachments, attachableResources } = input;
+
+  // --- Per-WebACL entries ---
+  const perWebAcl: FleetWebACLEntry[] = webACLs.map((webACL) => {
+    const attached = attachments.get(webACL.id) ?? [];
+    return {
+      id: webACL.id,
+      name: webACL.name,
+      scope: webACL.scope,
+      attachedResourceIds: attached.map((a) => a.resourceId),
+      attachedResourceKinds: attached.map((a) => a.resourceKind),
+      report: scoreWebACL(webACL),
+    };
+  });
+
+  // --- Overall score: simple average. Future: weight by traffic volume. ---
+  const overallScore =
+    perWebAcl.length === 0
+      ? 0
+      : Math.round(
+          perWebAcl.reduce((acc, e) => acc + e.report.totalScore, 0) /
+            perWebAcl.length
+        );
+  const overallVerdict = verdictFor(overallScore);
+
+  // --- Fleet-only findings ---
+  const fleetFindings: PostureFinding[] = [];
+
+  // 1. Coverage gap: attachable resources without any WebACL attached
+  const protectedResourceIds = new Set<string>();
+  for (const entry of perWebAcl) {
+    for (const id of entry.attachedResourceIds) protectedResourceIds.add(id);
+  }
+  const unprotected = attachableResources.filter(
+    (r) => !protectedResourceIds.has(r.resourceId)
+  );
+  if (unprotected.length > 0) {
+    fleetFindings.push({
+      category: "Coverage",
+      severity: "error",
+      title: "Unprotected WAF-attachable resource(s) in topology",
+      detail: `${unprotected.length} resource${unprotected.length > 1 ? "s" : ""} (${unprotected
+        .slice(0, 3)
+        .map((r) => `${r.resourceKind}:${r.resourceId}`)
+        .join(", ")}${unprotected.length > 3 ? "…" : ""}) have no WebACL attached.`,
+      recommendation:
+        "Attach a WebACL to every internet-facing resource. Unprotected resources are exposed to direct attacks regardless of how well-configured neighboring WebACLs are.",
+    });
+  }
+
+  // 2. IP reputation / anonymous IP coverage drift
+  const reputationGroups = ["AWSManagedRulesAmazonIpReputationList", "AWSManagedRulesAnonymousIpList"];
+  if (perWebAcl.length > 1) {
+    const withReputation = perWebAcl.filter((e) =>
+      e.report.findings.every(
+        (f) => !(f.title.toLowerCase().includes("ip reputation") && f.severity !== "info")
+      ) &&
+      hasAnyOfTheseManagedGroups(webACLsById(webACLs, e.id), reputationGroups)
+    );
+    if (withReputation.length > 0 && withReputation.length < perWebAcl.length) {
+      const withoutNames = perWebAcl
+        .filter((e) => !withReputation.includes(e))
+        .map((e) => e.name);
+      fleetFindings.push({
+        category: "Coverage",
+        severity: "warning",
+        title: "Inconsistent IP reputation protection across fleet",
+        detail: `${withReputation.length} of ${perWebAcl.length} WebACLs have IP reputation lists attached. Missing on: ${withoutNames.slice(0, 3).join(", ")}${withoutNames.length > 3 ? "…" : ""}.`,
+        recommendation:
+          "Attach AWSManagedRulesAmazonIpReputationList consistently across all WebACLs unless there's a specific reason to exclude one (e.g. internal-only endpoint).",
+      });
+    }
+  }
+
+  // 3. Default-action drift
+  if (perWebAcl.length > 1) {
+    const defaults = new Map<string, string[]>();
+    for (const e of perWebAcl) {
+      const waf = webACLsById(webACLs, e.id);
+      if (!waf) continue;
+      const arr = defaults.get(waf.defaultAction) ?? [];
+      arr.push(e.name);
+      defaults.set(waf.defaultAction, arr);
+    }
+    if (defaults.size > 1) {
+      const drift = [...defaults.entries()]
+        .map(([action, names]) => `${action}=[${names.join(", ")}]`)
+        .join("; ");
+      fleetFindings.push({
+        category: "Hygiene",
+        severity: "info",
+        title: "Mixed default actions across WebACLs",
+        detail: `Default actions differ across fleet: ${drift}.`,
+        recommendation:
+          "Confirm this is intentional — mixing default-ALLOW and default-BLOCK across similar-facing resources usually indicates a misconfiguration.",
+      });
+    }
+  }
+
+  // 4. Managed rule group override drift (same group, different COUNT/NONE)
+  if (perWebAcl.length > 1) {
+    const groupOverrides = new Map<string, Map<string, string[]>>(); // groupName -> mode -> webACL names
+    for (const e of perWebAcl) {
+      const waf = webACLsById(webACLs, e.id);
+      if (!waf) continue;
+      for (const rule of waf.rules) {
+        if (rule.statement.type !== "ManagedRuleGroupStatement") continue;
+        const stmt = rule.statement as { name?: string };
+        const groupName = stmt.name ?? "(unknown)";
+        const mode = rule.overrideAction ?? "NONE";
+        if (!groupOverrides.has(groupName)) groupOverrides.set(groupName, new Map());
+        const modeMap = groupOverrides.get(groupName)!;
+        const arr = modeMap.get(mode) ?? [];
+        arr.push(e.name);
+        modeMap.set(mode, arr);
+      }
+    }
+    for (const [groupName, modeMap] of groupOverrides.entries()) {
+      if (modeMap.size > 1) {
+        const modeSummary = [...modeMap.entries()]
+          .map(([mode, names]) => `${mode}=[${names.join(", ")}]`)
+          .join("; ");
+        fleetFindings.push({
+          category: "Defense",
+          severity: "info",
+          title: `Mixed override modes for ${groupName}`,
+          detail: `${groupName} is in different override modes across WebACLs: ${modeSummary}.`,
+          recommendation:
+            "Intentional if you're A/B testing a rule group in COUNT mode before going live. Otherwise align the overrides.",
+        });
+      }
+    }
+  }
+
+  // --- Consolidate per-WebACL findings (dedup by title, keep highest severity) ---
+  const consolidatedMap = new Map<string, PostureFinding>();
+  for (const entry of perWebAcl) {
+    for (const f of entry.report.findings) {
+      const existing = consolidatedMap.get(f.title);
+      if (!existing) {
+        consolidatedMap.set(f.title, f);
+      } else {
+        const severityRank = { error: 0, warning: 1, info: 2 } as const;
+        if (severityRank[f.severity] < severityRank[existing.severity]) {
+          consolidatedMap.set(f.title, f);
+        }
+      }
+    }
+  }
+  const severityOrder: Record<FindingSeverity, number> = { error: 0, warning: 1, info: 2 };
+  const consolidatedFindings = [...consolidatedMap.values()].sort(
+    (a, b) => severityOrder[a.severity] - severityOrder[b.severity]
+  );
+
+  // --- Summary ---
+  const summaryParts: string[] = [
+    `Fleet posture: ${overallVerdict} (${overallScore}/100) across ${perWebAcl.length} WebACL${perWebAcl.length === 1 ? "" : "s"}.`,
+  ];
+  if (unprotected.length > 0) {
+    summaryParts.push(`${unprotected.length} unprotected resource${unprotected.length === 1 ? "" : "s"}.`);
+  }
+  if (fleetFindings.filter((f) => f.severity === "error").length > 0) {
+    summaryParts.push("Fix fleet-level errors first.");
+  }
+
+  return {
+    overallScore,
+    overallVerdict,
+    webAclCount: perWebAcl.length,
+    unprotectedResourceCount: unprotected.length,
+    perWebAcl,
+    fleetFindings,
+    consolidatedFindings,
+    summary: summaryParts.join(" "),
+  };
+}
+
+function webACLsById(webACLs: WebACL[], id: string): WebACL | undefined {
+  return webACLs.find((w) => w.id === id);
+}
+
+function hasAnyOfTheseManagedGroups(webACL: WebACL | undefined, groupNames: string[]): boolean {
+  if (!webACL) return false;
+  for (const rule of webACL.rules) {
+    if (rule.statement.type !== "ManagedRuleGroupStatement") continue;
+    const stmt = rule.statement as { name?: string };
+    if (stmt.name && groupNames.includes(stmt.name)) return true;
+  }
+  return false;
+}

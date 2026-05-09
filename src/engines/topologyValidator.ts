@@ -167,18 +167,25 @@ export function validateTopology(nodes: TopoNode[], edges: TopoEdge[]): TopoRepo
     const downstream = outgoing.get(wafNode.id) ?? [];
     const upstream = incoming.get(wafNode.id) ?? [];
 
-    // Dangling WAF node
-    if (downstream.length === 0 || upstream.length === 0) {
+    // Dangling WAF: only fires if the WAF has no downstream (isn't
+    // protecting anything). WAF nodes in WAFSim's canonical model are
+    // side-attached — they have no upstream, just a "protects" edge
+    // pointing to the resource they're attached to. The previous rule
+    // fired on normal WAF nodes constantly, which made the banner
+    // useless.
+    if (downstream.length === 0) {
       findings.push({
         severity: "warning",
         code: "WAF_DANGLING",
-        message: `WAF node "${wafNode.label ?? wafNode.id}" is not fully connected.`,
+        message: `WAF node "${wafNode.label ?? wafNode.id}" is not attached to any resource.`,
         nodeIds: [wafNode.id],
         recommendation:
-          "A WAF node must sit on an edge between an upstream source and a downstream resource — connect both ends.",
+          "Connect this WAF to a CloudFront distribution, ALB, API Gateway, AppSync, Cognito User Pool, App Runner, or Verified Access.",
       });
       continue;
     }
+    // Suppress the upstream check entirely — side-attached WAFs never have it.
+    void upstream;
 
     // WAF must not be attached to a non-attachable resource
     for (const targetId of downstream) {
@@ -225,6 +232,10 @@ export function validateTopology(nodes: TopoNode[], edges: TopoEdge[]): TopoRepo
   }
 
   // ---- Unreachable nodes (no path from any INTERNET node) ----
+  // rc.9: Exclude WAF nodes from this check. WAFSim's canonical model has
+  // WAF nodes side-attached to the resources they protect, so they never
+  // appear on the Internet→resource traffic path. Flagging them as
+  // unreachable fires constantly on well-formed topologies.
   const internetIds = nodes.filter((n) => n.kind === "INTERNET").map((n) => n.id);
   const reachable = new Set<string>();
   const stack = [...internetIds];
@@ -235,7 +246,11 @@ export function validateTopology(nodes: TopoNode[], edges: TopoEdge[]): TopoRepo
     for (const t of outgoing.get(id) ?? []) stack.push(t);
   }
   const unreachableNodes = nodes.filter(
-    (n) => n.kind !== "INTERNET" && !reachable.has(n.id) && (outgoing.get(n.id)!.length > 0 || incoming.get(n.id)!.length > 0)
+    (n) =>
+      n.kind !== "INTERNET" &&
+      n.kind !== "WAF" &&
+      !reachable.has(n.id) &&
+      (outgoing.get(n.id)!.length > 0 || incoming.get(n.id)!.length > 0)
   );
   if (unreachableNodes.length > 0) {
     findings.push({

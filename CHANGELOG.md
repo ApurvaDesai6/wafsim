@@ -2,6 +2,121 @@
 
 All notable changes to WAFSim are captured here.
 
+## [3.0.0-rc.9] — 2026-05-08
+
+**Three serious issues reported during Vercel testing of rc.8, all fixed, plus
+the first integration-test layer that would have caught them, plus the
+aggregate fleet posture score as a consumer-grade landing-view feature.**
+
+### Fixed (the three bugs Apurva found on Vercel)
+
+1. **Rate-based rule never fired because Run Flood targeted `wafs[0]`.**
+   TrafficSimulator hardcoded `const activeWAF = wafs[0]` for the Flood tab.
+   In a multi-WAF topology where the rate-rule WAF wasn't index 0, the
+   flood silently ran against the wrong WAF. Floods of 600 req/300s
+   against a 100/5min rate rule would report "threshold not hit" because
+   they weren't actually hitting that rule.
+   **Fix**: explicit Target WAF dropdown in the Flood tab, defaulting to
+   whatever is selected in the right panel. Each WAF's attached rate-rule
+   count is shown inline so users see what they're about to test. When a
+   WAF has no rate rules, a yellow inline warning says "flood will only
+   show regular rule behavior; nothing will rate-limit".
+
+2. **Run Simulation (single-shot) silently can't trigger rate rules.**
+   Topology `Run Simulation` evaluates each WAF once with ONE request.
+   Rate-based rules require N requests in a time window — impossible
+   to trigger in single-shot. Previously the UI showed ALLOW with no
+   indication this was structurally impossible, leading users to think
+   their WAF wasn't working.
+   **Fix**: when the evaluated WAF contains any `RateBasedStatement`
+   rules, the EvaluationTrace panel shows a blue banner: "N rate-based
+   rules on this WAF. Single-request simulation can't trigger rate
+   limits — switch to the Flood tab to test."
+
+3. **Flood outcome didn't update the topology canvas.** Run Flood updated
+   only the bottom-panel timeline chart. The canvas kept whatever edge
+   coloring it had from a previous single-shot sim, producing the
+   infamous "RED Allow with green connecting path" state — where the
+   edge colors contradicted the displayed evaluation result.
+   **Fix**: `simulateTrafficFlow` now accepts an optional
+   `wafOutcomeOverrides: Map<wafId, {action, reason}>`. `handleFloodComplete`
+   in page.tsx runs topology flow with the flood's final outcome as an
+   override (tripped → BLOCK, not tripped → ALLOW) and updates
+   `trafficEdges`/`wafResults` accordingly. Both `handleSimulate` and
+   `handleFloodComplete` now clear stale topology state BEFORE running,
+   so no previous coloring can linger into a new simulation.
+
+### Added
+
+- **`src/__tests__/integration/multiWafRateFlood.test.ts` (6 tests).**
+  The integration tests that would have caught all three bugs above.
+  Builds Apurva's exact scenario: 3 WAFs (ALB regional, APIGW regional,
+  CloudFront with RBR 100/5min), CF WAF NOT in index 0. Verifies:
+  - single-shot leaves CF green (expected — can't trip rate rules)
+  - flood against CF trips at the correct load
+  - override-based topology update colors CF downstream as blocked
+  - flood against WAF_ALB (no RBR) does NOT trip
+  - regional WAFs still block independently
+  - state-consistency invariant: WAF with BLOCK action ⇒ outgoing
+    protection edge is colored blocked (no "red WAF green edge" state)
+  - override precedence: ALLOW override wins over default evaluation
+
+- **`scoreWebACLFleet()` + `AggregatePostureBadge` component.** When the
+  right panel has no specific WAF selected, it now shows an overall
+  Fleet Security Posture score computed across all WebACLs in the
+  topology. Per Apurva's feedback: "the smart security score should
+  take everything into account if they have multiple webACLs and
+  assess overall sec posture — a useful consumer value add feature."
+  Includes:
+  - Overall score (average of per-WebACL scores) + verdict
+  - Four fleet-level findings that the per-WebACL scorer can't surface:
+    1. **Unprotected resources** (ERROR) — WAF-attachable resources in
+       the topology with no WebACL attached
+    2. **Inconsistent IP reputation protection** (WARNING) — some
+       WebACLs have the IP reputation managed group, others don't
+    3. **Mixed default actions** (INFO) — WebACLs with different
+       `defaultAction` (ALLOW vs BLOCK) across similar-facing resources
+    4. **Mixed override modes for managed rule groups** (INFO) — same
+       managed group in different override modes (COUNT vs NONE) across
+       WebACLs, usually indicates incomplete A/B test rollout
+  - Per-WebACL mini-cards showing each WAF's individual score + attached
+    resources. Click any card to drill into that WAF.
+  - Consolidated findings from all WebACLs, deduped by title, keeping
+    the highest severity.
+  - Tests in `src/__tests__/postureScorerFleet.test.ts` (8 tests) for
+    aggregate math, dedup, and each fleet-level finding type.
+
+### Changed
+
+- **Topology validator: two finding types fixed + banner removed.**
+  `WAF_DANGLING` previously fired when a WAF had no upstream OR no
+  downstream. In WAFSim's side-attached-WAF model, WAFs never have
+  upstream — they're attached to resources via a "protects" edge. The
+  old rule fired on every well-formed WAF. **Fix**: WAF_DANGLING now
+  only fires when a WAF has no downstream (not protecting anything).
+  `UNREACHABLE_NODES` similarly flagged WAF nodes as unreachable since
+  they're off the main traffic path; **fix**: excluded WAF nodes from
+  the unreachable check. Per Apurva's feedback "the topology issues
+  banner flags are all shit, remove it entirely unless massively
+  improved", the always-on `TopologyIssuesBanner` component is no
+  longer rendered in page.tsx. The engine + its 14 unit tests remain
+  in place so a future release can gate findings behind an explicit
+  "Validate Topology" button.
+
+### Meta
+
+The meta lesson from rc.8 → rc.9: **169 unit tests passing meant nothing
+about whether user workflows worked**. All 169 tests validated pure
+function correctness; zero tested the integration between flood sim,
+topology sim, and UI state updates. Going forward, any claim of "N
+tests passing" in a commit message should be paired with "including
+integration test covering [specific user workflow]" or it's not a
+credibility signal.
+
+Test count: 183 (up from 169). Build green.
+
+---
+
 ## [3.0.0-rc.7] — 2026-05-08
 
 Critical bug fix + architectural refactor for traffic-flow simulation.
