@@ -100,7 +100,7 @@ describe("scoreWebACLFleet — fleet-only findings", () => {
     expect(
       report.fleetFindings.some(
         (f) =>
-          f.title === "Unprotected WAF-attachable resource(s) in topology" &&
+          f.title.startsWith("1 unprotected resource") &&
           f.severity === "error"
       )
     ).toBe(true);
@@ -123,9 +123,7 @@ describe("scoreWebACLFleet — fleet-only findings", () => {
     const report = scoreWebACLFleet(input);
     expect(report.unprotectedResourceCount).toBe(0);
     expect(
-      report.fleetFindings.some(
-        (f) => f.title === "Unprotected WAF-attachable resource(s) in topology"
-      )
+      report.fleetFindings.some((f) => f.title.includes("unprotected resource"))
     ).toBe(false);
   });
 
@@ -167,7 +165,7 @@ describe("scoreWebACLFleet — fleet-only findings", () => {
     const report = scoreWebACLFleet(input);
     expect(
       report.fleetFindings.some(
-        (f) => f.title === "Inconsistent IP reputation protection across fleet"
+        (f) => f.title.includes("IP reputation missing")
       )
     ).toBe(true);
   });
@@ -203,7 +201,7 @@ describe("scoreWebACLFleet — fleet-only findings", () => {
     const report = scoreWebACLFleet(input);
     expect(
       report.fleetFindings.some(
-        (f) => f.title === "Mixed default actions across WebACLs"
+        (f) => f.title === "Default action differs across WebACLs"
       )
     ).toBe(true);
   });

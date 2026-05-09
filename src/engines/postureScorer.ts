@@ -713,13 +713,11 @@ export function scoreWebACLFleet(input: FleetScopingInput): FleetPostureReport {
     fleetFindings.push({
       category: "Coverage",
       severity: "error",
-      title: "Unprotected WAF-attachable resource(s) in topology",
-      detail: `${unprotected.length} resource${unprotected.length > 1 ? "s" : ""} (${unprotected
-        .slice(0, 3)
-        .map((r) => `${r.resourceKind}:${r.resourceId}`)
-        .join(", ")}${unprotected.length > 3 ? "…" : ""}) have no WebACL attached.`,
-      recommendation:
-        "Attach a WebACL to every internet-facing resource. Unprotected resources are exposed to direct attacks regardless of how well-configured neighboring WebACLs are.",
+      title: `${unprotected.length} unprotected resource${unprotected.length > 1 ? "s" : ""}`,
+      detail: unprotected
+        .map((r) => `${r.resourceKind} ${r.resourceId}`)
+        .join(", "),
+      recommendation: "Attach a WebACL to each.",
     });
   }
 
@@ -727,9 +725,6 @@ export function scoreWebACLFleet(input: FleetScopingInput): FleetPostureReport {
   const reputationGroups = ["AWSManagedRulesAmazonIpReputationList", "AWSManagedRulesAnonymousIpList"];
   if (perWebAcl.length > 1) {
     const withReputation = perWebAcl.filter((e) =>
-      e.report.findings.every(
-        (f) => !(f.title.toLowerCase().includes("ip reputation") && f.severity !== "info")
-      ) &&
       hasAnyOfTheseManagedGroups(webACLsById(webACLs, e.id), reputationGroups)
     );
     if (withReputation.length > 0 && withReputation.length < perWebAcl.length) {
@@ -739,10 +734,9 @@ export function scoreWebACLFleet(input: FleetScopingInput): FleetPostureReport {
       fleetFindings.push({
         category: "Coverage",
         severity: "warning",
-        title: "Inconsistent IP reputation protection across fleet",
-        detail: `${withReputation.length} of ${perWebAcl.length} WebACLs have IP reputation lists attached. Missing on: ${withoutNames.slice(0, 3).join(", ")}${withoutNames.length > 3 ? "…" : ""}.`,
-        recommendation:
-          "Attach AWSManagedRulesAmazonIpReputationList consistently across all WebACLs unless there's a specific reason to exclude one (e.g. internal-only endpoint).",
+        title: `IP reputation missing on ${withoutNames.length} of ${perWebAcl.length} WebACL${perWebAcl.length > 1 ? "s" : ""}`,
+        detail: withoutNames.join(", "),
+        recommendation: "Add AWSManagedRulesAmazonIpReputationList.",
       });
     }
   }
@@ -758,23 +752,22 @@ export function scoreWebACLFleet(input: FleetScopingInput): FleetPostureReport {
       defaults.set(waf.defaultAction, arr);
     }
     if (defaults.size > 1) {
-      const drift = [...defaults.entries()]
-        .map(([action, names]) => `${action}=[${names.join(", ")}]`)
-        .join("; ");
+      const summary = [...defaults.entries()]
+        .map(([action, names]) => `${action}: ${names.join(", ")}`)
+        .join("  |  ");
       fleetFindings.push({
         category: "Hygiene",
-        severity: "info",
-        title: "Mixed default actions across WebACLs",
-        detail: `Default actions differ across fleet: ${drift}.`,
-        recommendation:
-          "Confirm this is intentional — mixing default-ALLOW and default-BLOCK across similar-facing resources usually indicates a misconfiguration.",
+        severity: "warning",
+        title: "Default action differs across WebACLs",
+        detail: summary,
+        recommendation: "Align unless intentional.",
       });
     }
   }
 
-  // 4. Managed rule group override drift (same group, different COUNT/NONE)
+  // 4. Managed rule group override drift
   if (perWebAcl.length > 1) {
-    const groupOverrides = new Map<string, Map<string, string[]>>(); // groupName -> mode -> webACL names
+    const groupOverrides = new Map<string, Map<string, string[]>>();
     for (const e of perWebAcl) {
       const waf = webACLsById(webACLs, e.id);
       if (!waf) continue;
@@ -793,18 +786,35 @@ export function scoreWebACLFleet(input: FleetScopingInput): FleetPostureReport {
     for (const [groupName, modeMap] of groupOverrides.entries()) {
       if (modeMap.size > 1) {
         const modeSummary = [...modeMap.entries()]
-          .map(([mode, names]) => `${mode}=[${names.join(", ")}]`)
-          .join("; ");
+          .map(([mode, names]) => `${mode}: ${names.join(", ")}`)
+          .join("  |  ");
+        // Short group name for display
+        const shortGroup = groupName.replace(/^AWSManagedRules/, "");
         fleetFindings.push({
           category: "Defense",
           severity: "info",
-          title: `Mixed override modes for ${groupName}`,
-          detail: `${groupName} is in different override modes across WebACLs: ${modeSummary}.`,
-          recommendation:
-            "Intentional if you're A/B testing a rule group in COUNT mode before going live. Otherwise align the overrides.",
+          title: `${shortGroup} override mode differs`,
+          detail: modeSummary,
+          recommendation: "Usually means a rollout is mid-flight.",
         });
       }
     }
+  }
+
+  // 5. Rate-based rules entirely absent from fleet (new in rc.9.1)
+  const fleetHasAnyRateRule = perWebAcl.some((e) => {
+    const waf = webACLsById(webACLs, e.id);
+    if (!waf) return false;
+    return waf.rules.some((r) => r.statement.type === "RateBasedStatement");
+  });
+  if (!fleetHasAnyRateRule && perWebAcl.length > 0) {
+    fleetFindings.push({
+      category: "RateLimiting",
+      severity: "warning",
+      title: "No rate-based rules anywhere in the fleet",
+      detail: "Volumetric attacks (credential stuffing, scraping) will not be rate-limited.",
+      recommendation: "Add at least one rate-based rule per internet-facing WebACL.",
+    });
   }
 
   // --- Consolidate per-WebACL findings (dedup by title, keep highest severity) ---
