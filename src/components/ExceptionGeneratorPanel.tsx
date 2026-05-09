@@ -45,6 +45,7 @@ import {
   ChevronRight,
   Target,
   Zap,
+  History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -65,6 +66,7 @@ import {
 import { evaluateWebACL } from "@/engines/wafEngine";
 import type { WebACL, Rule } from "@/lib/types";
 import { toast } from "sonner";
+import { exportException, type ExceptionExportFormat } from "@/lib/exceptionExporters";
 
 // ---------- Sample log used by the "Load sample" affordance ----------
 
@@ -305,7 +307,7 @@ function StepIndicator({ current, max }: { current: StepId; max: StepId }) {
 // ---------- Main component ----------
 
 export function ExceptionGeneratorPanel() {
-  const { wafs, selectedWAFId, addRuleToWAF, updateWAF } = useWAFSimStore();
+  const { wafs, selectedWAFId, addRuleToWAF, updateWAF, exceptionHistory, addExceptionHistory, removeExceptionHistory } = useWAFSimStore();
 
   const [step, setStep] = useState<StepId>(1);
   const [furthestStep, setFurthestStep] = useState<StepId>(1);
@@ -315,6 +317,9 @@ export function ExceptionGeneratorPanel() {
   const [targetWafId, setTargetWafId] = useState<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [insertedSnapshot, setInsertedSnapshot] = useState<WebACL | null>(null);
+  // rc.9.3 additions
+  const [showHistory, setShowHistory] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ExceptionExportFormat>("json");
 
   const effectiveWafId = targetWafId ?? selectedWAFId ?? (wafs.length > 0 ? wafs[0].id : null);
   const targetWAF = wafs.find((w) => w.id === effectiveWafId) ?? null;
@@ -432,6 +437,22 @@ export function ExceptionGeneratorPanel() {
     toast.success(`Exception rule inserted into "${targetWAF.name}"`, {
       description: "Ran verification before insert. Click the WAF to inspect.",
     });
+
+    // rc.9.3: log to history
+    if (parsedLog && generated.rule) {
+      addExceptionHistory({
+        wafId: targetWAF.id,
+        wafName: targetWAF.name,
+        strategy,
+        scope,
+        triggerUri: parsedLog.request.uri,
+        triggerMethod: parsedLog.request.method,
+        terminatingRuleId: parsedLog.terminatingRuleId,
+        ruleJson: JSON.stringify(generated.rule),
+        inserted: true,
+        verificationPassed: verification?.allPassed ?? null,
+      });
+    }
   };
 
   const handleUndo = () => {
@@ -460,8 +481,125 @@ export function ExceptionGeneratorPanel() {
 
   return (
     <div className="h-full flex flex-col text-white text-xs overflow-hidden">
-      <StepIndicator current={step} max={furthestStep} />
+      <div className="flex items-center border-b border-gray-800">
+        <div className="flex-1"><StepIndicator current={step} max={furthestStep} /></div>
+        <button
+          onClick={() => setShowHistory(!showHistory)}
+          className={cn(
+            "px-3 py-2 text-[11px] flex items-center gap-1.5 border-l border-gray-800 transition-colors",
+            showHistory ? "bg-gray-800 text-gray-100" : "text-gray-400 hover:text-gray-200"
+          )}
+        >
+          <History className="w-3 h-3" />
+          History
+          {exceptionHistory.length > 0 && (
+            <Badge variant="outline" className="text-[9px] px-1 py-0 ml-0.5">
+              {exceptionHistory.length}
+            </Badge>
+          )}
+        </button>
+      </div>
 
+      {showHistory && (
+        <div className="flex-1 overflow-auto p-4">
+          <div className="max-w-3xl mx-auto space-y-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-semibold text-gray-200">Exception history</div>
+                <div className="text-[11px] text-gray-500">
+                  {exceptionHistory.length} past exception
+                  {exceptionHistory.length === 1 ? "" : "s"} generated in this workspace
+                </div>
+              </div>
+              <Button
+                onClick={() => setShowHistory(false)}
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
+              >
+                Close
+              </Button>
+            </div>
+            {exceptionHistory.length === 0 ? (
+              <div className="rounded border border-gray-800 bg-gray-900/50 p-6 text-center text-[11px] text-gray-500">
+                No history yet. Generate an exception via the wizard and it will appear here.
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {exceptionHistory.map((rec) => (
+                  <div
+                    key={rec.id}
+                    className="rounded border border-gray-800 bg-gray-900/50 p-2.5 flex items-start gap-3"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge
+                          className={cn(
+                            "text-[9px] py-0",
+                            rec.inserted ? "bg-green-700" : "bg-gray-700"
+                          )}
+                        >
+                          {rec.inserted ? "applied" : "drafted"}
+                        </Badge>
+                        <span className="text-[11px] font-medium text-gray-200">
+                          {STRATEGY_META[rec.strategy].label}
+                        </span>
+                        <span className="text-[10px] text-gray-500">
+                          · {SCOPE_META[rec.scope].label}
+                        </span>
+                        <span className="text-[10px] text-gray-500 ml-auto">
+                          {new Date(rec.timestamp).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-gray-400 font-mono mt-1 truncate">
+                        {rec.triggerMethod} {rec.triggerUri}
+                      </div>
+                      <div className="text-[10px] text-gray-500 mt-0.5">
+                        Blocked by{" "}
+                        <span className="text-gray-400 font-mono">
+                          {rec.terminatingRuleId ?? "(unknown rule)"}
+                        </span>
+                        {" · "}
+                        Target: <span className="text-gray-400">{rec.wafName}</span>
+                        {rec.verificationPassed !== null && (
+                          <>
+                            {" · "}
+                            {rec.verificationPassed ? (
+                              <span className="text-green-400">verified ✓</span>
+                            ) : (
+                              <span className="text-red-400">verification failed</span>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const json = rec.ruleJson;
+                        navigator.clipboard?.writeText(json);
+                        toast.success("Rule JSON copied");
+                      }}
+                      className="text-[10px] text-blue-400 hover:text-blue-300 shrink-0"
+                      title="Copy rule JSON"
+                    >
+                      <Copy className="w-3 h-3" />
+                    </button>
+                    <button
+                      onClick={() => removeExceptionHistory(rec.id)}
+                      className="text-[10px] text-red-400 hover:text-red-300 shrink-0"
+                      title="Remove from history"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {!showHistory && (<>
       <div className="flex-1 overflow-auto p-4">
         {/* ---------- STEP 1: paste log ---------- */}
         {step === 1 && (
@@ -781,31 +919,59 @@ export function ExceptionGeneratorPanel() {
               </div>
             )}
 
-            {/* Advanced: JSON */}
+            {/* Advanced: multi-format export */}
             <div>
               <button
                 onClick={() => setAdvancedOpen(!advancedOpen)}
                 className="flex items-center gap-1.5 text-[11px] text-gray-400 hover:text-gray-200"
               >
                 {advancedOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-                Advanced — raw rule JSON
+                Export — AWS JSON, CloudFormation, Terraform, CLI
               </button>
               {advancedOpen && generated.rule && (
-                <div className="mt-2 rounded border border-gray-700 bg-gray-950 p-2">
-                  <div className="flex justify-end">
+                <div className="mt-2 rounded border border-gray-700 bg-gray-950 overflow-hidden">
+                  {/* Format tabs */}
+                  <div className="flex items-center border-b border-gray-800 text-[10px]">
+                    {(["json", "cloudformation", "terraform", "cli"] as const).map((f) => (
+                      <button
+                        key={f}
+                        onClick={() => setExportFormat(f)}
+                        className={cn(
+                          "px-3 py-1.5 font-medium transition-colors",
+                          exportFormat === f
+                            ? "text-blue-300 border-b-2 border-blue-500 bg-blue-500/5"
+                            : "text-gray-500 hover:text-gray-300"
+                        )}
+                      >
+                        {f === "json" && "AWS JSON"}
+                        {f === "cloudformation" && "CloudFormation"}
+                        {f === "terraform" && "Terraform"}
+                        {f === "cli" && "AWS CLI"}
+                      </button>
+                    ))}
                     <button
-                      onClick={handleCopyJson}
-                      className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                      onClick={() => {
+                        const text = exportException(
+                          generated.rule!,
+                          exportFormat,
+                          targetWAF?.name,
+                          targetWAF?.scope
+                        );
+                        navigator.clipboard?.writeText(text);
+                        toast.success(`Copied ${exportFormat.toUpperCase()}`);
+                      }}
+                      className="ml-auto px-3 py-1.5 text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-1"
                     >
                       <Copy className="w-3 h-3" /> Copy
                     </button>
                   </div>
-                  <pre className="text-[10px] font-mono text-gray-300 overflow-auto max-h-72 mt-1">
-{JSON.stringify(generated.rule, null, 2)}
+                  {/* Format body */}
+                  <pre className="text-[10px] font-mono text-gray-300 overflow-auto max-h-72 p-3">
+{exportException(generated.rule, exportFormat, targetWAF?.name, targetWAF?.scope)}
                   </pre>
                 </div>
               )}
-              {advancedOpen && generated.excludedRulesUpdate && (
+              {advancedOpen && generated.excludedRulesUpdate && !generated.rule && (
                 <div className="mt-2 rounded border border-gray-700 bg-gray-950 p-2">
                   <div className="text-[10px] text-gray-500 mb-1">
                     Update to managed group: {generated.excludedRulesUpdate.targetRuleName}
@@ -924,6 +1090,7 @@ export function ExceptionGeneratorPanel() {
           </div>
         )}
       </div>
+      </>)}
     </div>
   );
 }

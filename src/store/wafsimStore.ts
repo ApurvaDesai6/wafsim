@@ -20,6 +20,25 @@ import {
 } from "@/lib/types";
 import { v4 as uuidv4 } from "uuid";
 
+// rc.9.3: FP exception history record. One entry per successfully-generated
+// exception (optionally inserted). Becomes the audit trail users need for
+// compliance-heavy environments.
+export interface FPExceptionRecord {
+  id: string;
+  timestamp: number;              // ms since epoch
+  wafId: string;
+  wafName: string;
+  strategy: "LABEL_MATCH_EXCEPTION" | "MANAGED_GROUP_EXCLUSION" | "CUSTOM_ALLOW_BYPASS";
+  scope: "EXACT" | "SAME_PATH" | "SAME_ENDPOINT";
+  triggerUri: string;             // URI from the log that triggered this
+  triggerMethod: string;
+  terminatingRuleId: string | null;
+  ruleJson: string;               // serialized Rule for re-apply
+  inserted: boolean;              // was it actually applied to the WAF?
+  verificationPassed: boolean | null; // did the before/after sim pass?
+  notes?: string;
+}
+
 interface WAFSimState {
   // Topology
   nodes: AWSResourceNode[];
@@ -34,6 +53,9 @@ interface WAFSimState {
   // Resources
   ipSets: IPSet[];
   regexPatternSets: RegexPatternSet[];
+
+  // rc.9.3: FP exception generation history (audit trail + re-apply)
+  exceptionHistory: FPExceptionRecord[];
 
   // Simulation
   currentRequest: HttpRequest;
@@ -75,6 +97,11 @@ interface WAFSimState {
   deleteWAF: (id: string) => void;
 
   addRuleToWAF: (wafId: string, rule: Rule) => void;
+
+  // rc.9.3: FP exception history actions
+  addExceptionHistory: (record: Omit<FPExceptionRecord, "id" | "timestamp">) => string;
+  removeExceptionHistory: (id: string) => void;
+  clearExceptionHistory: () => void;
   updateRuleInWAF: (wafId: string, ruleName: string, updates: Partial<Rule>) => void;
   removeRuleFromWAF: (wafId: string, ruleName: string) => void;
   reorderRules: (wafId: string, ruleNames: string[]) => void;
@@ -186,6 +213,7 @@ export const useWAFSimStore = create<WAFSimState>()(
       selectedWAFId: null,
       ipSets: [],
       regexPatternSets: [],
+      exceptionHistory: [],
       currentRequest: defaultRequest,
       evaluationResult: null,
       lastEvaluatedWAFId: null,
@@ -320,6 +348,26 @@ export const useWAFSimStore = create<WAFSimState>()(
               : w
           ),
         }));
+      },
+
+      // rc.9.3: FP exception history actions
+      addExceptionHistory: (record) => {
+        const id = uuidv4();
+        set((state) => ({
+          exceptionHistory: [
+            { ...record, id, timestamp: Date.now() },
+            ...state.exceptionHistory,
+          ].slice(0, 200), // cap at 200 — drops the oldest when exceeded
+        }));
+        return id;
+      },
+      removeExceptionHistory: (id) => {
+        set((state) => ({
+          exceptionHistory: state.exceptionHistory.filter((r) => r.id !== id),
+        }));
+      },
+      clearExceptionHistory: () => {
+        set({ exceptionHistory: [] });
       },
 
       updateRuleInWAF: (wafId, ruleName, updates) => {
@@ -517,6 +565,7 @@ export const useWAFSimStore = create<WAFSimState>()(
         wafs: state.wafs,
         ipSets: state.ipSets,
         regexPatternSets: state.regexPatternSets,
+        exceptionHistory: state.exceptionHistory,
       }),
       migrate: () => {
         // Clear stale state — return fresh defaults
@@ -526,6 +575,7 @@ export const useWAFSimStore = create<WAFSimState>()(
           wafs: [],
           ipSets: [],
           regexPatternSets: [],
+          exceptionHistory: [],
         };
       },
     }

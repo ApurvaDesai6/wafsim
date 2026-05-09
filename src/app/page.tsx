@@ -12,6 +12,8 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PostureScoreBadge } from "@/components/PostureScoreBadge";
 import { AggregatePostureBadge } from "@/components/AggregatePostureBadge";
 import { ExceptionGeneratorPanel } from "@/components/ExceptionGeneratorPanel";
+import { WelcomeOverlay } from "@/components/WelcomeOverlay";
+import { encodeShareableState, decodeShareableState, buildShareUrl, extractShareState } from "@/lib/shareState";
 import { runAllTests } from "@/engines/testSuite";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -21,7 +23,7 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   Shield, Play, Download, Upload, Trash2, FileJson, Code, Copy, Check,
-  Settings, X, List, Zap, ChevronDown, ChevronUp, Link,
+  Settings, X, List, Zap, ChevronDown, ChevronUp, Link, Share2,
 } from "lucide-react";
 import { evaluateWebACL } from "@/engines/wafEngine";
 import { simulateTrafficFlow } from "@/engines/trafficFlowEngine";
@@ -57,6 +59,8 @@ export default function WAFSimPage() {
   const [showRuleBuilder, setShowRuleBuilder] = useState(false);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
   const [ruleBuilderMode, setRuleBuilderMode] = useState<"create" | "edit">("create");
+  // rc.9.3: welcome overlay (shown on first load when workspace isn't meaningful yet)
+  const [showWelcome, setShowWelcome] = useState(false);
   const [editingRule, setEditingRule] = useState<Rule | null>(null);
   const [bottomTab, setBottomTab] = useState<string | null>(null);
   const [bottomHeight, setBottomHeight] = useState(260);
@@ -79,6 +83,52 @@ export default function WAFSimPage() {
       }
     } catch { /* ignore invalid hash */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // rc.9.3: Load gzip-compressed shareable state from ?state= URL param
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const encoded = url.searchParams.get("state");
+    if (!encoded) {
+      // No shared state — check if workspace is meaningful enough to hide welcome
+      const s = useWAFSimStore.getState();
+      const meaningful = s.wafs.length > 0 || s.nodes.length > 2 || s.edges.length > 1;
+      if (!meaningful) setShowWelcome(true);
+      return;
+    }
+    decodeShareableState(encoded).then((state) => {
+      if (state) {
+        importState(JSON.stringify(state));
+        url.searchParams.delete("state");
+        window.history.replaceState(null, "", url.toString());
+        toast.success("Loaded shared workspace");
+      } else {
+        toast.error("Shared URL was invalid or from an incompatible version");
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // rc.9.3: Share current workspace as a URL
+  const handleShareUrl = useCallback(async () => {
+    try {
+      const s = useWAFSimStore.getState();
+      const encoded = await encodeShareableState({
+        nodes: s.nodes,
+        edges: s.edges,
+        wafs: s.wafs,
+        ipSets: s.ipSets,
+        regexPatternSets: s.regexPatternSets,
+      });
+      const url = buildShareUrl(window.location.href.split("?")[0].split("#")[0], encoded);
+      await navigator.clipboard.writeText(url);
+      toast.success("Share URL copied to clipboard", {
+        description: `${Math.round(encoded.length / 1024)} KB encoded · send this link to share your workspace`,
+      });
+    } catch (err) {
+      toast.error("Could not generate share URL");
+      console.error(err);
+    }
   }, []);
 
   // Only show WAF config when a WAF is explicitly selected (not fallback)
@@ -292,7 +342,8 @@ export default function WAFSimPage() {
   const canAttach = selectedNode?.wafAttachable && !nodeHasWAF;
 
   return (
-    <div className="h-screen flex flex-col bg-gray-950 text-white overflow-hidden">
+    <div className="h-screen flex flex-col bg-gray-950 text-white overflow-hidden relative">
+      {showWelcome && <WelcomeOverlay onDismiss={() => setShowWelcome(false)} />}
       {/* Header */}
       <header role="banner" aria-label="WAFSim toolbar" className="h-11 border-b border-gray-800 flex items-center justify-between px-3 md:px-4 bg-gray-900 shrink-0">
         <div className="flex items-center gap-2">
@@ -309,6 +360,24 @@ export default function WAFSimPage() {
           <Button variant="ghost" size="sm" aria-label="Import WAFSim state from file" onClick={() => { const i = document.createElement("input"); i.type = "file"; i.accept = ".json"; i.onchange = (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) { const r = new FileReader(); r.onload = (e) => { try { importState(e.target?.result as string); toast.success("Imported"); } catch { toast.error("Failed"); } }; r.readAsText(f); } }; i.click(); }} className="h-7 text-xs text-gray-400 hidden sm:inline-flex"><Upload className="w-3 h-3 mr-1" />Import</Button>
           <Button variant="ghost" size="sm" aria-label="Import AWS WebACL JSON" onClick={() => { const i = document.createElement("input"); i.type = "file"; i.accept = ".json"; i.onchange = (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) { const r = new FileReader(); r.onload = (ev) => { const result = importWebACL(ev.target?.result as string); if (result.success) { toast.success(`Imported WebACL${result.warnings.length ? ` (${result.warnings.length} warnings)` : ""}`); } else { toast.error(result.errors[0] || "Import failed"); } if (result.warnings.length) result.warnings.forEach(w => console.warn("Import warning:", w)); }; r.readAsText(f); } }; i.click(); }} className="h-7 text-xs text-gray-400 hidden sm:inline-flex"><Shield className="w-3 h-3 mr-1" />Import WebACL</Button>
           <Button variant="ghost" size="sm" aria-label="Export configuration (Ctrl+E)" onClick={() => setShowExport(true)} className="h-7 text-xs text-gray-400 hidden sm:inline-flex"><Download className="w-3 h-3 mr-1" />Export</Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label="Browse templates and starter workspaces"
+            onClick={() => setShowWelcome(true)}
+            className="h-7 text-xs text-gray-400 hidden sm:inline-flex"
+          >
+            <FileJson className="w-3 h-3 mr-1" />Templates
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label="Share current workspace as a URL"
+            onClick={handleShareUrl}
+            className="h-7 text-xs text-gray-400 hidden sm:inline-flex"
+          >
+            <Share2 className="w-3 h-3 mr-1" />Share
+          </Button>
           <Button variant="ghost" size="sm" aria-label="Copy shareable link (Ctrl+S)" onClick={() => { try { const state = exportState(); const encoded = btoa(state); const url = `${window.location.origin}${window.location.pathname}#cfg=${encoded}`; navigator.clipboard.writeText(url); toast.success("Share link copied to clipboard"); } catch { toast.error("Config too large to share via URL"); } }} className="h-7 text-xs text-gray-400 hidden sm:inline-flex"><Link className="w-3 h-3 mr-1" />Share</Button>
           <Button variant="ghost" size="sm" aria-label="Reset all configuration" onClick={() => { if (confirm("Reset everything?")) { resetState(); setSampledRequests([]); toast.success("Reset"); } }} className="h-7 text-xs text-red-400"><Trash2 className="w-3 h-3" /></Button>
           <Button variant="ghost" size="sm" aria-label="Keyboard shortcuts" onClick={() => toast.info("⌨️ Ctrl/⌘+R: Run simulation · Ctrl+E: Export · Ctrl+S: Share link · Click a WAF node to see posture score + findings", { duration: 8000 })} className="h-7 text-xs text-gray-500 hidden sm:inline-flex" title="Keyboard shortcuts">?</Button>
