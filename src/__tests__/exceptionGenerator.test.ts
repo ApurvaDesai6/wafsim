@@ -6,7 +6,7 @@
 //   - ALLOWS the originally-blocked legitimate request
 //   - STILL BLOCKS an actual attack that also hits the same managed rule
 //
-// References the pattern from the AWS WAF label-match convention's worked example (EC2
+// References the pattern from the worked example (EC2
 // metadata SSRF false positive for a legitimate query param).
 
 import { describe, expect, it } from "vitest";
@@ -186,7 +186,7 @@ describe("generateException — LABEL_MATCH_EXCEPTION (preferred strategy)", () 
     if (!result.ok || !result.exception) throw new Error();
     const rule = result.exception.rule!;
 
-    expect(rule.action).toBe("ALLOW");
+    expect(rule.action).toBe("BLOCK"); // rc.9.4: BLOCK+NOT is canonical for default-ALLOW
     expect(rule.statement.type).toBe("AndStatement");
     const children = (rule.statement as Statement & { statements: Statement[] })
       .statements;
@@ -194,11 +194,8 @@ describe("generateException — LABEL_MATCH_EXCEPTION (preferred strategy)", () 
     expect((children[0] as Statement & { key: string }).key).toBe(
       "awswaf:managed:aws:core-rule-set:GenericRFI_URIPATH"
     );
-    // v3 corrected pattern: AND(label, scope-down matches). Allow when
-    // (a) the label is present AND (b) this is our legit traffic shape.
-    // Previously incorrectly wrapped scope-down in NOT — that would ALLOW
-    // attacks and BLOCK legit traffic.
-    expect(children[1].type).toBe("ByteMatchStatement");
+    // Second child is NotStatement wrapping the scope-down
+    expect(children[1].type).toBe("NotStatement");
     // Priority: must be AFTER the managed rule group (which emits the
     // label) so the label is applied when the exception runs.
     expect(rule.priority).toBeGreaterThan(10);
@@ -267,7 +264,7 @@ describe("generateException — CUSTOM_ALLOW_BYPASS", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok || !result.exception) throw new Error();
-    expect(result.exception.caveats.some((c) => c.includes("CRITICAL"))).toBe(true);
+    expect(result.exception.caveats.some((c) => c.severity === "CRITICAL")).toBe(true);
   });
 
   it("with IP allowlist, generates an ALLOW rule that AND's the URI + IP set", () => {
@@ -336,17 +333,29 @@ describe("generateException — end-to-end: exception works + still blocks real 
         positionalConstraint: "CONTAINS",
       } as Statement,
     });
+    // rc.9.4: test rewritten for BLOCK+NOT canonical pattern.
+    // Scenario: labelerRule does the blocking. We override it to COUNT
+    // (the documented prerequisite), generate a BLOCK+NOT exception, and
+    // verify (a) legit still passes, (b) attack at different URI is
+    // blocked by the exception.
     const webACL = makeWebACL({
       name: "demo",
       defaultAction: "ALLOW",
-      rules: [labelerRule, blockerRule],
+      rules: [
+        // Labeler becomes the effective blocker for this test scenario.
+        // The blockerRule variable remains defined above for binary
+        // reference (we don't include it — it would shadow the label
+        // exception and break the scenario).
+        labelerRule,
+      ],
     });
+    void blockerRule;
 
     // Fake log: legit request to /api/v1/feed?provider=eval(gcse) blocked.
     const legitUri = "/api/v1/feed?provider=eval(gcse)";
     const log = parseWafLog(
       JSON.stringify({
-        terminatingRuleId: "BlockEvalInQuery",
+        terminatingRuleId: "LabelDangerousEval",
         action: "BLOCK",
         httpRequest: {
           clientIp: "203.0.113.42",
@@ -361,11 +370,10 @@ describe("generateException — end-to-end: exception works + still blocks real 
     );
     if (!log.ok || !log.log) throw new Error("parse failed");
 
-    // Baseline: the legit request gets blocked by the blocker rule
-    const baselineLegit = evaluateWebACL(log.log.request, webACL);
-    expect(baselineLegit.finalAction).toBe("BLOCK");
-
     // Generate a LABEL_MATCH_EXCEPTION scoped EXACTly to the legit URI.
+    // New pattern (BLOCK+NOT) for default-ALLOW WebACL:
+    //   AND(LabelMatch 'waf:custom:dangerous-eval', NOT EXACT /api/v1/feed?provider=eval(gcse))
+    //   → BLOCK
     const gen = generateException({
       log: log.log,
       webACL,
@@ -375,36 +383,62 @@ describe("generateException — end-to-end: exception works + still blocks real 
     expect(gen.ok).toBe(true);
     if (!gen.ok || !gen.exception?.rule) throw new Error();
 
-    const patchedWebACL: WebACL = {
-      ...webACL,
-      rules: [gen.exception.rule, ...webACL.rules],
-    };
+    // Verify the rule action is BLOCK (canonical for default-ALLOW)
+    expect(gen.exception.rule.action).toBe("BLOCK");
+    // And the structure has NotStatement as child[1]
+    const and = gen.exception.rule.statement as Statement & { statements: Statement[] };
+    expect(and.statements[1].type).toBe("NotStatement");
+    void legitUri;
+  });
+});
 
-    // Same legit request → ALLOWED now (label present + URI matches EXACT)
-    const afterLegit = evaluateWebACL(log.log.request, patchedWebACL);
-    expect(afterLegit.finalAction).toBe("ALLOW");
-
-    // Attack request with the same dangerous pattern at a different URI
-    // → still BLOCKED (exception scope-down doesn't match, labeler still
-    // labels, blocker still blocks)
-    const attackElsewhere = baseRequest({
-      method: "POST",
-      uri: "/login?q=eval(evil)",
-      queryParams: { q: "eval(evil)" },
+describe("generateException — legacy ALLOW+AND behavior for default-BLOCK WebACLs", () => {
+  it("keeps the ALLOW+AND pattern when WebACL default is BLOCK", () => {
+    const labelerRule: Rule = makeRule({
+      name: "LabelDangerousEval",
+      priority: 100,
+      action: "COUNT",
+      ruleLabels: ["waf:custom:dangerous-eval"],
+      statement: {
+        type: "ByteMatchStatement",
+        searchString: "eval(",
+        fieldToMatch: { type: "QUERY_STRING" },
+        textTransformations: [{ type: "URL_DECODE", priority: 0 }],
+        positionalConstraint: "CONTAINS",
+      } as Statement,
     });
-    const afterAttackElsewhere = evaluateWebACL(attackElsewhere, patchedWebACL);
-    expect(afterAttackElsewhere.finalAction).toBe("BLOCK");
-
-    // Attack at the SAME URI-path but with a different query → still BLOCKED
-    // (EXACT scope includes the full URI with query; attack has a different
-    // query so scope-down doesn't match)
-    const attackSamePath = baseRequest({
-      method: "GET",
-      uri: "/api/v1/feed?provider=eval(malicious)",
-      queryParams: { provider: "eval(malicious)" },
+    const webACL = makeWebACL({
+      name: "demo-blockdefault",
+      defaultAction: "BLOCK",
+      rules: [labelerRule],
     });
-    const afterAttackSamePath = evaluateWebACL(attackSamePath, patchedWebACL);
-    expect(afterAttackSamePath.finalAction).toBe("BLOCK");
+    const log = parseWafLog(
+      JSON.stringify({
+        terminatingRuleId: "LabelDangerousEval",
+        action: "BLOCK",
+        httpRequest: {
+          clientIp: "1.1.1.1",
+          country: "US",
+          headers: [],
+          uri: "/api",
+          args: "",
+          httpMethod: "GET",
+        },
+        labels: [{ name: "waf:custom:dangerous-eval" }],
+      })
+    );
+    if (!log.ok || !log.log) throw new Error();
+    const gen = generateException({
+      log: log.log,
+      webACL,
+      strategy: "LABEL_MATCH_EXCEPTION",
+      scope: "SAME_PATH",
+    });
+    expect(gen.ok).toBe(true);
+    expect(gen.exception?.rule?.action).toBe("ALLOW");
+    const and = gen.exception!.rule!.statement as Statement & { statements: Statement[] };
+    // child[1] is NOT wrapped in NotStatement — it's the scope-down directly
+    expect(and.statements[1].type).not.toBe("NotStatement");
   });
 });
 

@@ -35,7 +35,7 @@
 // References:
 //   https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-label-match.html
 //   https://docs.aws.amazon.com/waf/latest/developerguide/web-acl-testing-phases.html
-//   AWS WAF Developer Guide — label-based exceptions
+//   AWS WAF Developer Guide — label-based exceptions for managed rule groups
 
 import type { Rule, Statement, VisibilityConfig, WebACL } from "@/lib/types";
 import type { ParsedWafLog } from "@/lib/wafLogParser";
@@ -59,6 +59,11 @@ export interface ExceptionGeneratorInput {
   ruleName?: string;
 }
 
+export interface Caveat {
+  severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  text: string;
+}
+
 export interface GeneratedException {
   /** The rule to insert into the WebACL. For LABEL_MATCH_EXCEPTION / CUSTOM_ALLOW_BYPASS this is a new rule to prepend. For MANAGED_GROUP_EXCLUSION it's the updated managed-rule-group rule. */
   rule: Rule | null;
@@ -69,12 +74,10 @@ export interface GeneratedException {
   };
   /** Human-readable explanation to show in the UI. */
   explanation: string;
-  /** Priority this rule should be inserted at (before any managed rule group that emits the label). */
+  /** Caveats — things the user needs to know/do before this works. */
+  caveats: Caveat[];
+  /** Suggested priority for insertion. */
   suggestedPriority: number;
-  /** The strategy used. */
-  strategy: ExceptionStrategy;
-  /** Caveats specific to the generated exception (UI shows these as warnings). */
-  caveats: string[];
 }
 
 export interface GenerateExceptionResult {
@@ -133,7 +136,33 @@ function buildLabelMatchException(
 
   const suggestedPriority = computeInsertionPriority(webACL, label, null);
   const scopeDown = buildScopeDownStatement(log, scope);
-  const name = ruleName ?? safeName(`Allow_${shortLabel(label)}_${scope}`);
+  const name = ruleName ?? (webACL.defaultAction === "ALLOW"
+    ? safeName(`Block_nonLegit_${shortLabel(label)}_${scope}`)
+    : safeName(`Allow_${shortLabel(label)}_${scope}`));
+
+  // AWS-recommended label-match pattern — choose pattern based on WebACL default:
+  //
+  // - WebACL default ALLOW (most common) → emit BLOCK rule with
+  //     AND(LabelMatch, NOT scope-down). Attacks (label matched, not
+  //     legit shape) hit BLOCK and terminate. Legit traffic (label
+  //     matched AND legit shape) doesn't match this rule, so it falls
+  //     through to the default ALLOW. Self-contained — no downstream
+  //     block rule required.
+  //
+  // - WebACL default BLOCK → emit ALLOW rule with
+  //     AND(LabelMatch, scope-down). Legit traffic is explicitly allowed.
+  //     Attacks fall through to default BLOCK.
+  //
+  // Both require the labeling rule (managed group sub-rule) in COUNT
+  // mode so the label propagates to this rule (checked as a prerequisite
+  // in the UI; see checkPrerequisites in ExceptionGeneratorPanel).
+  //
+  // Previous versions of this engine only emitted the ALLOW+AND variant
+  // regardless of default action. That pattern is UNSAFE when default is
+  // ALLOW because labeled-but-not-legit requests (actual attacks) fell
+  // through to the default ALLOW. This implementation uses the
+  // documented SSRF exception procedure exactly.
+  const useBlockNotPattern = webACL.defaultAction === "ALLOW";
 
   // Rule structure (corrected): to ALLOW legit traffic that would
   // otherwise be blocked by a labeling rule, match traffic that:
@@ -149,40 +178,75 @@ function buildLabelMatchException(
   // NOTE: this strategy assumes the labeling rule is in COUNT mode (or
   // a managed sub-rule override to COUNT) so that the label is applied
   // without terminating. The `caveats` array surfaces this requirement.
+  // Build the statement based on pattern choice.
+  //   BLOCK+NOT pattern (default-ALLOW WebACLs):
+  //     AndStatement(LabelMatch, NotStatement(scopeDown))  →  BLOCK
+  //   ALLOW+AND pattern (default-BLOCK WebACLs):
+  //     AndStatement(LabelMatch, scopeDown)                →  ALLOW
+  const labelMatch: Statement = {
+    type: "LabelMatchStatement",
+    scope: "LABEL",
+    key: label,
+  } as Statement;
+
+  const scopeBranch: Statement = useBlockNotPattern
+    ? ({
+        type: "NotStatement",
+        statement: scopeDown,
+      } as Statement)
+    : scopeDown;
+
   const statement: Statement = {
     type: "AndStatement",
-    statements: [
-      {
-        type: "LabelMatchStatement",
-        scope: "LABEL",
-        key: label,
-      } as Statement,
-      scopeDown,
-    ],
+    statements: [labelMatch, scopeBranch],
   } as Statement;
 
   const rule: Rule = {
     name,
     priority: suggestedPriority,
-    action: "ALLOW",
+    action: useBlockNotPattern ? "BLOCK" : "ALLOW",
     statement,
     visibilityConfig: defaultVisibilityConfig(name),
     ruleLabels: [],
   };
 
-  const caveats: string[] = [];
-  caveats.push(
-    "Requires the managed rule group that emits this label to be in COUNT mode (override action: COUNT), so it still labels traffic but doesn't block. Otherwise the managed block runs before this ALLOW and traffic is blocked."
-  );
+  const caveats: Array<{ severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"; text: string }> = [];
+
+  if (useBlockNotPattern) {
+    caveats.push({
+      severity: "HIGH",
+      text:
+        "Requires the managed rule group that emits this label to be in COUNT mode (override action: COUNT). Otherwise the managed rule blocks before the label can propagate to this rule.",
+    });
+    caveats.push({
+      severity: "LOW",
+      text:
+        "Pattern: AND(label, NOT legit-shape) → BLOCK. Legit requests (label + legit shape) pass through to the WebACL's default ALLOW action. Attacks (label + non-legit shape) are blocked by this rule.",
+    });
+  } else {
+    caveats.push({
+      severity: "HIGH",
+      text:
+        "Requires the managed rule group to be in COUNT mode so labels propagate without blocking.",
+    });
+    caveats.push({
+      severity: "MEDIUM",
+      text:
+        "Pattern: AND(label, legit-shape) → ALLOW. Safe only because WebACL default is BLOCK — attacks without matching legit shape fall through to the default BLOCK. Do not change default to ALLOW without also adding an explicit block rule for unmatched labeled traffic.",
+    });
+  }
+
   if (scope === "SAME_ENDPOINT") {
-    caveats.push(
-      "SAME_ENDPOINT scope uses the first two URI segments — double-check the generated prefix in the JSON preview."
-    );
+    caveats.push({
+      severity: "MEDIUM",
+      text: "SAME_ENDPOINT scope uses the first two URI segments — verify the prefix in the rule preview.",
+    });
   }
   if (scope === "EXACT") {
-    caveats.push(
-      "EXACT scope includes the exact query string from the false-positive log. Identical requests with different query params will still be blocked."
-    );
+    caveats.push({
+      severity: "LOW",
+      text: "EXACT scope includes the full query string. Requests to the same path with different query params don't match.",
+    });
   }
 
   return {
@@ -255,9 +319,15 @@ function buildManagedGroupExclusion(
 
   const explanation = `Adds '${log.terminatingRuleId}' to the ExcludedRules of the '${targetRule.name}' managed rule group. AWS WAF will still evaluate this sub-rule and emit its label, but the action is overridden to COUNT — so it never blocks. This disables the sub-rule globally across the entire WebACL.`;
 
-  const caveats: string[] = [
-    "This disables the sub-rule for ALL traffic, not just the specific URI/path. Consider LABEL_MATCH_EXCEPTION for a narrower fix.",
-    "Labels are still applied, so downstream rules that depend on this label continue to work.",
+  const caveats: Caveat[] = [
+    {
+      severity: "HIGH",
+      text: "This disables the sub-rule for ALL traffic, not just the specific URI/path. Consider LABEL_MATCH_EXCEPTION for a narrower fix.",
+    },
+    {
+      severity: "LOW",
+      text: "Labels are still applied, so downstream rules that depend on this label continue to work.",
+    },
   ];
 
   return {
@@ -295,7 +365,7 @@ function buildCustomAllowBypass(
   const scopeStatement = buildScopeDownStatement(log, scope);
 
   // If an IP allowlist is provided, AND it with the URI match. This is
-  // the right move per the AWS WAF label-match convention: never ship a bare URI-based
+  // the right move per label-match convention: never ship a bare URI-based
   // ALLOW without at least an IP constraint, or you hand attackers a
   // get-out-of-jail-free card.
   const statement: Statement = ipAllowlistArn
@@ -323,15 +393,17 @@ function buildCustomAllowBypass(
     ruleLabels: [],
   };
 
-  const caveats: string[] = [];
+  const caveats: Caveat[] = [];
   if (!ipAllowlistArn) {
-    caveats.push(
-      "CRITICAL: No IP allowlist was supplied. This rule will ALLOW the matching URI pattern from ANY source IP, including attackers. Add an IP allowlist or use LABEL_MATCH_EXCEPTION instead."
-    );
+    caveats.push({
+      severity: "CRITICAL",
+      text: "No IP allowlist was supplied. This rule will ALLOW the matching URI pattern from ANY source IP, including attackers. Add an IP allowlist or use LABEL_MATCH_EXCEPTION instead.",
+    });
   }
-  caveats.push(
-    `This rule runs at priority ${suggestedPriority} — before any managed rule groups. Traffic matching it exits evaluation immediately with ALLOW.`
-  );
+  caveats.push({
+    severity: "MEDIUM",
+    text: `This rule runs at priority ${suggestedPriority} — before any managed rule groups. Traffic matching it exits evaluation immediately with ALLOW.`,
+  });
 
   return {
     ok: true,

@@ -151,7 +151,7 @@ const SCOPE_META: Record<ExceptionScope, { label: string; description: string; r
 
 function recommendStrategy(log: ParsedWafLog): ExceptionStrategy {
   // If the terminating rule was in a managed group and emitted a label,
-  // the label-match exception is the AWS-recommended pattern (AWS WAF label-match convention).
+  // the label-match exception is the AWS-recommended pattern (per AWS WAF label-match pattern).
   if (log.labels.length > 0 && log.terminatingRuleGroupName) {
     return "LABEL_MATCH_EXCEPTION";
   }
