@@ -10,7 +10,6 @@ import { RuleBuilder } from "@/components/RuleBuilder";
 import { ResourceManager } from "@/components/ResourceManager";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PostureScoreBadge } from "@/components/PostureScoreBadge";
-import { AggregatePostureBadge } from "@/components/AggregatePostureBadge";
 import { ExceptionGeneratorPanel } from "@/components/ExceptionGeneratorPanel";
 import { WelcomeOverlay } from "@/components/WelcomeOverlay";
 import { encodeShareableState, decodeShareableState, buildShareUrl, extractShareState } from "@/lib/shareState";
@@ -611,28 +610,27 @@ export default function WAFSimPage() {
               <WAFConfigPanel wafId={activeWAF.id} onEditRule={handleEditRule} onCreateRule={handleCreateRule} />
             </div>
           ) : selectedNode?.wafAttachable ? (
-            <div className="flex-1 flex flex-col overflow-hidden">
-              {wafs.length > 0 && (
-                <div className="px-3 pt-2 pb-0 border-b border-gray-800 pb-3">
-                  <AggregatePostureBadge />
-                </div>
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+              <Shield className="w-14 h-14 text-green-400/50 mb-4" />
+              <p className="font-medium">{selectedNode.label}</p>
+              <p className="text-xs text-gray-400 mt-1 mb-5">Supports WAF protection</p>
+              {canAttach ? (
+                <Button onClick={handleAttachWAF} className="bg-green-600 hover:bg-green-700">
+                  <Shield className="w-4 h-4 mr-2" />Attach WAF WebACL
+                </Button>
+              ) : (
+                <p className="text-xs text-yellow-400">Connect a source node first</p>
               )}
-              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-                <Shield className="w-14 h-14 text-green-400/50 mb-4" />
-                <p className="font-medium">{selectedNode.label}</p>
-                <p className="text-xs text-gray-400 mt-1 mb-5">Supports WAF protection</p>
-                {canAttach ? (
-                  <Button onClick={handleAttachWAF} className="bg-green-600 hover:bg-green-700">
-                    <Shield className="w-4 h-4 mr-2" />Attach WAF WebACL
-                  </Button>
-                ) : (
-                  <p className="text-xs text-yellow-400">Connect a source node first</p>
-                )}
-              </div>
             </div>
           ) : wafs.length > 0 ? (
-            <div className="flex-1 overflow-y-auto p-3">
-              <AggregatePostureBadge />
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+              <Shield className="w-12 h-12 text-gray-700 mb-3" />
+              <p className="text-sm font-medium text-gray-300">
+                {wafs.length} WAF{wafs.length === 1 ? "" : "s"} configured
+              </p>
+              <p className="text-xs text-gray-500 mt-2 max-w-[260px] leading-relaxed">
+                Click a WAF node on the canvas to inspect its posture score, rules, and attached resources.
+              </p>
             </div>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">

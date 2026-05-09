@@ -43,7 +43,8 @@ import type { ParsedWafLog } from "@/lib/wafLogParser";
 export type ExceptionStrategy =
   | "LABEL_MATCH_EXCEPTION"
   | "MANAGED_GROUP_EXCLUSION"
-  | "CUSTOM_ALLOW_BYPASS";
+  | "CUSTOM_ALLOW_BYPASS"
+  | "SCOPE_DOWN_STATEMENT";
 
 export type ExceptionScope = "EXACT" | "SAME_PATH" | "SAME_ENDPOINT";
 
@@ -71,6 +72,16 @@ export interface GeneratedException {
   excludedRulesUpdate?: {
     targetRuleName: string; // name of the managed-group rule in the WebACL
     excludedRules: string[]; // sub-rules to exclude (rule names within the group)
+  };
+  /**
+   * For SCOPE_DOWN_STATEMENT strategy — the scope-down Statement to add
+   * to the existing managed-group rule. Applied by patching the managed
+   * rule's .statement.scopeDownStatement field, with a NotStatement
+   * wrapper around the legit-traffic match.
+   */
+  scopeDownUpdate?: {
+    targetRuleName: string;
+    scopeDownStatement: unknown; // Statement type
   };
   /** Human-readable explanation to show in the UI. */
   explanation: string;
@@ -108,6 +119,8 @@ export function generateException(input: ExceptionGeneratorInput): GenerateExcep
       return buildManagedGroupExclusion(input);
     case "CUSTOM_ALLOW_BYPASS":
       return buildCustomAllowBypass(input);
+    case "SCOPE_DOWN_STATEMENT":
+      return buildScopeDownStatementException(input);
     default:
       return { ok: false, error: `Unknown strategy: ${strategy}` };
   }
@@ -415,6 +428,90 @@ function buildCustomAllowBypass(
       suggestedPriority,
       strategy: "CUSTOM_ALLOW_BYPASS",
       caveats,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// SCOPE_DOWN_STATEMENT — simplest strategy per AWS WAF Developer Guide.
+// Instead of creating a new rule, edit the managed rule's scope-down to
+// exclude the legit-traffic pattern. The managed rule evaluates normally
+// for all other traffic. Zero new rules. Deploy risk is low.
+// ---------------------------------------------------------------------------
+function buildScopeDownStatementException(
+  input: ExceptionGeneratorInput
+): GenerateExceptionResult {
+  const { log, webACL, scope } = input;
+
+  if (!log.terminatingRuleGroupName) {
+    return {
+      ok: false,
+      error:
+        "SCOPE_DOWN_STATEMENT applies only to managed rule groups. This log's terminating rule isn't in a managed group — use LABEL_MATCH_EXCEPTION or CUSTOM_ALLOW_BYPASS instead.",
+    };
+  }
+
+  const shortGroupName = log.terminatingRuleGroupName.split("#").pop() ?? log.terminatingRuleGroupName;
+
+  const targetRule = webACL.rules.find(
+    (r) =>
+      r.statement.type === "ManagedRuleGroupStatement" &&
+      (r.statement as { name?: string }).name === shortGroupName
+  );
+  if (!targetRule) {
+    return {
+      ok: false,
+      error: `Managed rule group "${shortGroupName}" is not attached to this WebACL — can't add a scope-down to a rule that doesn't exist here.`,
+    };
+  }
+
+  const legitMatch = buildScopeDownStatement(log, scope);
+  const notLegit: Statement = {
+    type: "NotStatement",
+    statement: legitMatch,
+  } as Statement;
+
+  const existingScopeDown = (targetRule.statement as {
+    scopeDownStatement?: Statement;
+  }).scopeDownStatement;
+
+  const newScopeDown: Statement = existingScopeDown
+    ? ({
+        type: "AndStatement",
+        statements: [existingScopeDown, notLegit],
+      } as Statement)
+    : notLegit;
+
+  const caveats: Caveat[] = [
+    {
+      severity: "LOW",
+      text: `Applies to the entire ${shortGroupName} managed rule group — all sub-rules skip evaluation on requests matching the legit pattern, not just the one that caused the false positive.`,
+    },
+    {
+      severity: "LOW",
+      text: "Simpler than adding a new rule, but less surgical than LABEL_MATCH_EXCEPTION which targets a specific sub-rule.",
+    },
+  ];
+  if (existingScopeDown) {
+    caveats.push({
+      severity: "MEDIUM",
+      text: `The managed rule already has a scope-down statement. The new condition is AND-combined with the existing one — verify the combined logic matches your intent.`,
+    });
+  }
+
+  const explanation = `Adds a scope-down statement to the existing ${shortGroupName} rule. When the request matches ${scopeHuman(scope)}, the managed rule group is skipped entirely. All other traffic is evaluated normally. This is the simplest strategy — zero new rules, edits the managed rule in-place.`;
+
+  return {
+    ok: true,
+    exception: {
+      rule: null,
+      scopeDownUpdate: {
+        targetRuleName: targetRule.name,
+        scopeDownStatement: newScopeDown,
+      },
+      explanation,
+      caveats,
+      suggestedPriority: targetRule.priority,
     },
   };
 }

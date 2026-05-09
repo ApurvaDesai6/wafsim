@@ -67,6 +67,7 @@ import { evaluateWebACL } from "@/engines/wafEngine";
 import type { WebACL, Rule } from "@/lib/types";
 import { toast } from "sonner";
 import { exportException, type ExceptionExportFormat } from "@/lib/exceptionExporters";
+import { MANAGED_RULE_GROUPS } from "@/lib/managedRuleGroups";
 
 // ---------- Sample log used by the "Load sample" affordance ----------
 
@@ -127,6 +128,12 @@ const STRATEGY_META: Record<ExceptionStrategy, {
     recommendedWhen: "No labels available, or you need a quick win for a specific internal tool.",
     tradeoff: "Bypasses ALL downstream rules — highest risk. Always pair with IP allowlist.",
   },
+  SCOPE_DOWN_STATEMENT: {
+    label: "Scope-down statement",
+    description: "Edit the managed rule's scope-down to skip the rule when the request matches your legit pattern.",
+    recommendedWhen: "You want the simplest possible change — no new rule, just an edit to the existing managed rule.",
+    tradeoff: "Applies to the entire managed group, not a specific sub-rule. Less surgical than LABEL_MATCH_EXCEPTION.",
+  },
 };
 
 const SCOPE_META: Record<ExceptionScope, { label: string; description: string; risk: string }> = {
@@ -175,6 +182,18 @@ interface Prerequisite {
   met: boolean;
   message: string;
   fix?: string;
+  /**
+   * rc.9.5 — optional auto-fix descriptor. When present, the UI offers a
+   * one-click button to apply the remediation. Currently supports:
+   *   - type: 'SET_MANAGED_GROUP_COUNT'
+   *     Sets the overrideAction of the managed rule to COUNT so labels
+   *     propagate without blocking.
+   */
+  autoFix?: {
+    type: "SET_MANAGED_GROUP_COUNT";
+    targetRuleName: string;
+    buttonLabel: string;
+  };
 }
 
 function checkPrerequisites(
@@ -210,7 +229,12 @@ function checkPrerequisites(
       out.push({
         met: false,
         message: `"${shortGroupName}" is not in COUNT mode, so it blocks before the label-match exception can fire.`,
-        fix: "Override the group to COUNT, then the exception rule can consume the label.",
+        fix: "Override the group to COUNT so labels propagate to this rule.",
+        autoFix: {
+          type: "SET_MANAGED_GROUP_COUNT",
+          targetRuleName: labelerRule.name,
+          buttonLabel: `Set ${shortGroupName} to COUNT`,
+        },
       });
     } else {
       out.push({
@@ -426,6 +450,22 @@ export function ExceptionGeneratorPanel() {
             statement: {
               ...r.statement,
               excludedRules: generated.excludedRulesUpdate!.excludedRules,
+            } as typeof r.statement,
+          };
+        }
+        return r;
+      });
+      updateWAF(targetWAF.id, { rules: updatedRules });
+    } else if (generated.scopeDownUpdate) {
+      // rc.9.5: scope-down statement strategy — patch the managed rule's
+      // scope-down field in place.
+      const updatedRules = targetWAF.rules.map((r) => {
+        if (r.name === generated.scopeDownUpdate!.targetRuleName) {
+          return {
+            ...r,
+            statement: {
+              ...r.statement,
+              scopeDownStatement: generated.scopeDownUpdate!.scopeDownStatement,
             } as typeof r.statement,
           };
         }
@@ -662,6 +702,31 @@ export function ExceptionGeneratorPanel() {
                     in {parsedLog.terminatingRuleGroupName}
                   </div>
                 )}
+                {/* rc.9.5: rule context from managed rule groups catalog */}
+                {(() => {
+                  const shortGroupName = parsedLog.terminatingRuleGroupName?.split("#").pop() ?? "";
+                  const groupInfo = MANAGED_RULE_GROUPS[shortGroupName];
+                  const subRuleInfo = groupInfo?.rules?.find(
+                    (r) => r.name === parsedLog.terminatingRuleId
+                  );
+                  if (!subRuleInfo) return null;
+                  const docsUrl = `https://docs.aws.amazon.com/waf/latest/developerguide/aws-managed-rule-groups-list.html`;
+                  return (
+                    <div className="mt-2 text-[11px] text-gray-300 leading-relaxed">
+                      <span className="text-gray-500">What this rule does: </span>
+                      {subRuleInfo.description}
+                      {" · "}
+                      <a
+                        href={docsUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-blue-400 hover:text-blue-300 underline"
+                      >
+                        AWS docs
+                      </a>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
@@ -831,6 +896,28 @@ export function ExceptionGeneratorPanel() {
                       <div className="text-gray-200">{p.message}</div>
                       {p.fix && (
                         <div className="text-gray-400 mt-0.5 italic">{p.fix}</div>
+                      )}
+                      {p.autoFix && targetWAF && !p.met && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 text-[10px] mt-2 border-yellow-500 bg-yellow-500/10 text-yellow-200 hover:bg-yellow-500/20"
+                          onClick={() => {
+                            if (p.autoFix!.type === "SET_MANAGED_GROUP_COUNT") {
+                              const updatedRules = targetWAF.rules.map((r) => {
+                                if (r.name === p.autoFix!.targetRuleName) {
+                                  return { ...r, overrideAction: "COUNT" as const };
+                                }
+                                return r;
+                              });
+                              updateWAF(targetWAF.id, { rules: updatedRules });
+                              toast.success(`Set ${p.autoFix!.targetRuleName} to COUNT mode`);
+                            }
+                          }}
+                        >
+                          <Zap className="w-3 h-3 mr-1" />
+                          {p.autoFix.buttonLabel}
+                        </Button>
                       )}
                     </div>
                   </div>
