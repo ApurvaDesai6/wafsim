@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { motion } from "framer-motion";
-import { EvaluationResult, RuleTrace } from "@/lib/types";
+import { EvaluationResult, RuleTrace, WebACL } from "@/lib/types";
 import {
   Check,
   X,
@@ -21,9 +21,12 @@ import { cn } from "@/lib/utils";
 
 interface EvaluationTraceProps {
   result: EvaluationResult;
+  /** Optional: the WebACL that produced the result. Used to detect rate-based
+   *  rules for the single-shot warning banner (rc.9). */
+  webACL?: WebACL | null;
 }
 
-export const EvaluationTrace: React.FC<EvaluationTraceProps> = ({ result }) => {
+export const EvaluationTrace: React.FC<EvaluationTraceProps> = ({ result, webACL }) => {
   const [expandedRules, setExpandedRules] = useState<Set<string>>(new Set());
 
   const toggleRule = (ruleName: string) => {
@@ -106,6 +109,30 @@ export const EvaluationTrace: React.FC<EvaluationTraceProps> = ({ result }) => {
             <span className="text-yellow-400">Managed rule behavior is approximated</span>
           </div>
         )}
+
+        {/* rc.9: Rate-based-rule single-shot warning. Rate rules need N
+             requests over a 5-minute window to fire. A single-shot
+             simulation can NEVER trigger them, so without this banner a
+             user on a WAF with only rate-based rules would see ALLOW
+             and reasonably think their WAF isn't working. */}
+        {(() => {
+          if (!webACL) return null;
+          const rbrCount = webACL.rules.filter(
+            (r) => r.statement.type === "RateBasedStatement"
+          ).length;
+          if (rbrCount === 0) return null;
+          return (
+            <div className="mt-1.5 px-2 py-1 bg-blue-500/10 border border-blue-500/30 rounded flex items-start gap-1.5 text-[10px]">
+              <Zap className="w-3 h-3 text-blue-400 flex-shrink-0 mt-0.5" />
+              <span className="text-blue-300">
+                {rbrCount} rate-based rule
+                {rbrCount > 1 ? "s" : ""} on this WAF. Single-request
+                simulation can&apos;t trigger rate limits — switch to the Flood
+                tab to test.
+              </span>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Rules Timeline */}

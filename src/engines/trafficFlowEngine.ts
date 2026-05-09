@@ -57,6 +57,21 @@ interface SimulateOptions {
   ipSets?: IPSet[];
   regexPatternSets?: RegexPatternSet[];
   request: HttpRequest;
+  /**
+   * v3 rc.9 — optional per-WAF action overrides. When set, the engine uses
+   * the override instead of evaluating the WAF against the (single) request.
+   * This is how the Flood tab feeds its final outcome (rate-limit tripped /
+   * not tripped) into topology coloring, without the flood logic needing
+   * to reimplement the topology reachability algorithm. Rate-based rules
+   * can only fire with multi-request context, so without this hook the
+   * single-request simulation path would always show them as ALLOW.
+   *
+   * Map key = WAF id. The override describes the action that would terminate
+   * for this WAF at end-of-flood. Typical usage:
+   *   - BLOCK when flood tripped the rate rule
+   *   - ALLOW when flood ran to completion without tripping
+   */
+  wafOutcomeOverrides?: Map<string, { action: string; reason: string }>;
 }
 
 export function simulateTrafficFlow(options: SimulateOptions): TrafficFlowResult {
@@ -116,10 +131,34 @@ export function simulateTrafficFlow(options: SimulateOptions): TrafficFlowResult
     if (!waf) continue;
     const protectedResources = wafExpansion.get(wafNode.id) ?? [];
     for (const resourceId of protectedResources) {
-      const result = evaluateWebACL(request, waf, {
-        ipSets: options.ipSets,
-        regexPatternSets: options.regexPatternSets,
-      });
+      // rc.9: honor override if provided for this WAF. The override lets
+      // the Flood tab color the topology based on whether the rate limit
+      // tripped, without this engine needing to do multi-request simulation.
+      const override = options.wafOutcomeOverrides?.get(waf.id);
+      const result: EvaluationResult = override
+        ? {
+            finalAction: override.action as EvaluationResult["finalAction"],
+            terminatingRule: null,
+            allMatchedRules: [],
+            labelsApplied: [],
+            ruleTrace: [
+              {
+                ruleName: "(flood outcome)",
+                priority: -1,
+                matched: override.action !== "ALLOW",
+                action: override.action as EvaluationResult["finalAction"],
+                labelsAdded: [],
+                terminates: true,
+                reason: override.reason,
+              },
+            ],
+            requestWithTransformations: request,
+            approximatedManagedRules: false,
+          }
+        : evaluateWebACL(request, waf, {
+            ipSets: options.ipSets,
+            regexPatternSets: options.regexPatternSets,
+          });
       pathResults.push({ wafId: waf.id, wafName: waf.name, resourceId, result });
 
       // Track terminating action per-WAF. If the same WAF has mixed

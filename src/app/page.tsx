@@ -27,7 +27,7 @@ import { simulateTrafficFlow } from "@/engines/trafficFlowEngine";
 import { exportAsWebACLJson, exportAsTerraformHCL, generateCLICommands } from "@/engines/exportEngine";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
-import { Rule, HttpRequest, EvaluationResult } from "@/lib/types";
+import { Rule, HttpRequest, EvaluationResult, FloodSimulationResult } from "@/lib/types";
 
 interface SampledRequest {
   timestamp: string;
@@ -135,6 +135,12 @@ export default function WAFSimPage() {
     if (wafs.length === 0) { toast.error("No WAF configured"); return; }
     setIsSimulating(true);
     setIsAnimating(true);
+    // rc.9: clear stale topology coloring from any previous simulation run
+    // (single-shot OR flood). Without this, a user who ran Run Flood and
+    // then Run Simulation could see leftover red edges alongside a new
+    // ALLOW evaluation — the 'RED Allow with green path' state.
+    setTrafficEdges(new Map());
+    setWafResults(new Map());
 
     setTimeout(() => {
       // v3.1.0: delegate traffic-flow simulation to the testable engine.
@@ -177,6 +183,58 @@ export default function WAFSimPage() {
       if (!bottomTab) setBottomTab("results");
     }, 600);
   }, [wafs, currentRequest, ipSets, regexPatternSets, nodes, edges, bottomTab, setEvaluationResultWithWAF]);
+
+  // rc.9: Flood outcome feeds into topology coloring. Previously Run Flood
+  // only updated the bottom-panel timeline; the canvas stayed stale (or
+  // green) even after rate-limit tripped. This hook runs topology flow
+  // with the flood's final WAF outcome as an override so edges reflect
+  // reality.
+  const handleFloodComplete = useCallback((floodTargetWafId: string, floodResult: FloodSimulationResult) => {
+    // rc.9: clear previous topology coloring before applying flood outcome
+    // so there's no moment where state from a prior sim is visible.
+    setTrafficEdges(new Map());
+    setWafResults(new Map());
+
+    const rateTripped = floodResult.triggersAtSeconds !== null;
+    const overrideAction = rateTripped ? "BLOCK" : "ALLOW";
+    const reason = rateTripped
+      ? `Rate limit tripped at ${floodResult.triggersAtSeconds}s (after ${floodResult.triggerRequestCount} requests)`
+      : `Flood completed ${floodResult.totalRequests} requests; rate limit not reached`;
+
+    const overrides = new Map<string, { action: string; reason: string }>();
+    overrides.set(floodTargetWafId, { action: overrideAction, reason });
+
+    // Reuse a legitimate baseline request — flood result already encodes
+    // whether the rate rule tripped; we don't need to re-evaluate rules
+    // on this request. The override takes precedence.
+    const baseRequest: HttpRequest = {
+      protocol: "HTTP/1.1",
+      method: "GET",
+      uri: "/flood-baseline",
+      queryParams: {},
+      headers: [],
+      body: "",
+      bodyEncoding: "none",
+      contentType: "application/json",
+      sourceIP: "192.168.1.100",
+      country: "US",
+    };
+
+    const flow = simulateTrafficFlow({
+      nodes, edges, wafs,
+      ipSets, regexPatternSets,
+      request: baseRequest,
+      wafOutcomeOverrides: overrides,
+    });
+
+    // Clear any stale evaluation result so the trace panel doesn't mislead.
+    // The flood's visual is the bottom-panel timeline chart.
+    setWafResults(flow.wafResults);
+    setTrafficEdges(flow.edgeFlow);
+    if (flow.displayResult) {
+      setEvaluationResultWithWAF(flow.displayResult.result, flow.displayResult.wafId);
+    }
+  }, [nodes, edges, wafs, ipSets, regexPatternSets, setEvaluationResultWithWAF]);
 
   const handleNodeClick = useCallback((nodeId: string) => selectNode(nodeId), [selectNode]);
   const handleEdgeClick = useCallback((edgeId: string) => {
@@ -336,11 +394,11 @@ export default function WAFSimPage() {
                   }}
                 />
                 {bottomTab === "simulator" && (
-                  <TrafficSimulator onSimulate={handleSimulate} />
+                  <TrafficSimulator onSimulate={handleSimulate} onFloodComplete={handleFloodComplete} />
                 )}
                 {bottomTab === "results" && (
                   evaluationResult ? (
-                    <div className="h-full overflow-y-auto"><EvaluationTrace result={evaluationResult} /></div>
+                    <div className="h-full overflow-y-auto"><EvaluationTrace result={evaluationResult} webACL={wafs.find(w => w.id === lastEvaluatedWAFId) ?? null} /></div>
                   ) : (
                     <div className="h-full flex items-center justify-center text-gray-500 text-sm">Run a simulation to see results</div>
                   )

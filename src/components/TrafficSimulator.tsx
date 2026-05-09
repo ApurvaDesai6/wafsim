@@ -36,16 +36,31 @@ const ATTACK_PRESETS: AttackPreset[] = [
 
 interface TrafficSimulatorProps {
   onSimulate?: () => void;
+  /** rc.9: called when flood completes so parent can update topology coloring */
+  onFloodComplete?: (wafId: string, result: FloodSimulationResult) => void;
 }
 
-export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate }) => {
-  const { currentRequest, setCurrentRequest, wafs, ipSets, regexPatternSets, setEvaluationResultWithWAF, setIsSimulating } = useWAFSimStore();
+export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate, onFloodComplete }) => {
+  const { currentRequest, setCurrentRequest, wafs, selectedWAFId, ipSets, regexPatternSets, setEvaluationResultWithWAF, setIsSimulating } = useWAFSimStore();
   const [activeSection, setActiveSection] = useState<"form" | "presets" | "batch" | "flood">("form");
   const [batchResults, setBatchResults] = useState<Array<{ name: string; category: string; action: string }> | null>(null);
   const [floodConfig, setFloodConfig] = useState({ rps: 50, duration: 60, sourceIPs: 1, uri: "/api/endpoint", method: "GET" as string });
   const [floodResult, setFloodResult] = useState<FloodSimulationResult | null>(null);
+  // v3 rc.9 fix: explicit WAF selector for Run Flood.
+  // Previous behavior: hardcoded to wafs[0]. If the user had multiple WAFs
+  // and the one they wanted to test was not index 0, the flood silently ran
+  // against the wrong WAF — looked like "rate rule didn't fire" to the user.
+  // New behavior: default to the currently-selected WAF from the right panel,
+  // fall back to wafs[0] only if nothing is selected. User can override via
+  // the dropdown in the Flood tab.
+  const [floodTargetWafId, setFloodTargetWafId] = useState<string | null>(null);
+  const effectiveFloodTarget =
+    floodTargetWafId ?? selectedWAFId ?? (wafs.length > 0 ? wafs[0].id : null);
+  const floodTargetWAF = wafs.find((w) => w.id === effectiveFloodTarget) ?? null;
 
-  const activeWAF = wafs.length > 0 ? wafs[0] : null;
+  // Batch / preset simulation still uses the user-selected WAF (or first WAF
+  // as a fallback). This is for the 'presets' and 'batch' tabs only, not flood.
+  const activeWAF = wafs.find((w) => w.id === selectedWAFId) ?? (wafs.length > 0 ? wafs[0] : null);
 
   const applyPreset = (preset: AttackPreset) => {
     setCurrentRequest({
@@ -78,7 +93,7 @@ export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate }
   };
 
   const runFlood = () => {
-    if (!activeWAF) return;
+    if (!floodTargetWAF) return;
     const baseRequest: HttpRequest = {
       protocol: "HTTP/1.1",
       method: floodConfig.method as HTTPMethod,
@@ -97,7 +112,10 @@ export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate }
     // Convert requests-per-second to requests-per-minute for simulateFlood
     const rpm = floodConfig.rps * 60;
     const durationMin = Math.max(1 / 60, floodConfig.duration / 60);
-    const result = simulateFlood(baseRequest, activeWAF, rpm, durationMin, {
+    // rc.9 fix: run the flood against the explicitly-targeted WAF
+    // (floodTargetWAF), not against wafs[0]. This is the bug that made rate
+    // rules appear to not fire on multi-WAF topologies.
+    const result = simulateFlood(baseRequest, floodTargetWAF, rpm, durationMin, {
       ipSets: ipSets.map((s) => ({ arn: s.arn, name: s.name, addresses: s.addresses })),
       regexPatternSets: regexPatternSets.map((s) => ({
         arn: s.arn,
@@ -107,6 +125,10 @@ export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate }
       varySourceIP: floodConfig.sourceIPs > 1,
     });
     setFloodResult(result);
+    // rc.9: propagate flood outcome to topology coloring so the canvas
+    // reflects reality. Without this, the canvas stays green even when
+    // the flood tripped a rate limit.
+    onFloodComplete?.(floodTargetWAF.id, result);
   };
 
   const addHeader = () => setCurrentRequest({ ...currentRequest, headers: [...(currentRequest.headers || []), { name: "", value: "" }] });
@@ -233,6 +255,61 @@ export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate }
         {activeSection === "flood" && (
           <div className="space-y-2">
             <p className="text-[11px] text-gray-400">Simulate volumetric attacks against rate-based rules. Timeline shows when the rate limit trips.</p>
+            {/* rc.9 — explicit WAF target selector. Previously hardcoded to wafs[0]
+                which silently tested the wrong WAF on multi-WAF topologies. */}
+            {wafs.length > 0 && (
+              <div className="space-y-1">
+                <Label className="text-[10px] text-gray-500 uppercase tracking-wider">Target WAF</Label>
+                <Select
+                  value={effectiveFloodTarget ?? ""}
+                  onValueChange={(v) => setFloodTargetWafId(v)}
+                >
+                  <SelectTrigger className="bg-gray-800 border-gray-700 h-7 text-xs">
+                    <SelectValue placeholder="Select a WAF" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {wafs.map((w) => {
+                      const rbrCount = w.rules.filter(
+                        (r) => r.statement.type === "RateBasedStatement"
+                      ).length;
+                      return (
+                        <SelectItem key={w.id} value={w.id}>
+                          {w.name} ({w.scope})
+                          {rbrCount > 0 ? ` \u00b7 ${rbrCount} rate rule${rbrCount > 1 ? "s" : ""}` : " \u00b7 no rate rules"}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+                {floodTargetWAF && (
+                  <p className="text-[10px] text-gray-500">
+                    {(() => {
+                      const rbrs = floodTargetWAF.rules.filter(
+                        (r) => r.statement.type === "RateBasedStatement"
+                      );
+                      if (rbrs.length === 0)
+                        return (
+                          <span className="text-yellow-500">
+                            Warning: this WAF has no rate-based rules. Flood will only show regular rule behavior; nothing will rate-limit.
+                          </span>
+                        );
+                      return (
+                        <>
+                          Rate-based rules on this WAF:{" "}
+                          {rbrs
+                            .map((r) => {
+                              const stmt = r.statement as { rateLimit?: number; limit?: number };
+                              const limit = stmt.rateLimit ?? stmt.limit ?? "?";
+                              return `${r.name} (${limit}/5min)`;
+                            })
+                            .join(", ")}
+                        </>
+                      );
+                    })()}
+                  </p>
+                )}
+              </div>
+            )}
             <div className="grid grid-cols-5 gap-2">
               <div>
                 <Label className="text-[10px] text-gray-500 uppercase tracking-wider">Req/sec</Label>
@@ -261,7 +338,7 @@ export const TrafficSimulator: React.FC<TrafficSimulatorProps> = ({ onSimulate }
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <Button onClick={runFlood} disabled={!activeWAF} size="sm" className="bg-orange-600 hover:bg-orange-700 h-7 text-xs">
+              <Button onClick={runFlood} disabled={!floodTargetWAF} size="sm" className="bg-orange-600 hover:bg-orange-700 h-7 text-xs">
                 Run Flood
               </Button>
               <span className="text-[10px] text-gray-500">
