@@ -164,6 +164,62 @@ If Step 4 doesn't produce a clearly-useful banner, Apurva's original call to rem
 - CHANGELOG opens with "Three serious issues reported during Vercel testing. This release fixes all three and adds workflow-level integration tests that would have caught them."
 - Update GAP_ANALYSIS.md to explicitly state: "Tests prior to rc.9 were engine-unit-level and did not catch simulation-pipeline integration failures. rc.9 adds the first integration test layer."
 
+### Step 8 — Overall-posture aggregate view (consumer-grade value-add) — 1-2 hours
+
+**User requirement (Apurva, 2026-05-08):** when the right-side panel has no specific WAF selected, the posture score area should show an OVERALL security posture computed across ALL WebACLs in the topology — not blank, not single-WAF scoped.
+
+This is positioned as a consumer value-add: a topology with 3 WAFs, each at 70/100, is meaningfully different from one with 3 WAFs at 95/95/20. The aggregate view should surface that at a glance.
+
+Implementation:
+
+- Add a new pure function in `src/engines/postureScorer.ts`:
+
+  ```typescript
+  export interface AggregatePostureReport {
+    overallScore: number;           // weighted average 0-100
+    overallVerdict: PostureVerdict;
+    webAclCount: number;
+    perWebAcl: Array<{
+      name: string;
+      id: string;
+      scope: "CLOUDFRONT" | "REGIONAL";
+      attachedToResourceIds: string[];
+      report: PostureReport;
+    }>;
+    /** Findings surfaced across all WebACLs, deduped by title. */
+    consolidatedFindings: PostureFinding[];
+    /** Specific "fleet-level" findings that only make sense across WebACLs. */
+    fleetFindings: PostureFinding[];
+  }
+
+  export function scoreWebACLFleet(
+    webACLs: WebACL[],
+    edges: TopologyEdge[],
+    nodes: AWSResourceNode[]
+  ): AggregatePostureReport { ... }
+  ```
+
+- Fleet-level findings to check (new, not present in per-WebACL scorer):
+
+  1. **Coverage gap:** are there WAF-attachable resources in the topology with NO WebACL attached? Flag them as "X unprotected resource(s): CloudFront distribution DemoCF has no WAF."
+  2. **Inconsistent protection:** one WebACL has AmazonIpReputationList, another doesn't. Flag "IP reputation list only attached to 1 of 3 WAFs — consider standardizing."
+  3. **Duplicate effort:** same managed rule group attached to multiple WebACLs with different override actions. Flag "CommonRuleSet is COUNT on WAF_CF but BLOCK on WAF_ALB — intentional?"
+  4. **Default action drift:** WAFs with mixed default actions (ALLOW vs BLOCK) across same-scoped resources.
+
+- Weighting for overall score: simple average of per-WebACL scores is fine for v1. Could later weight by how much traffic each protects (e.g. CF is internet-facing, probably weighted higher than an internal ALB).
+
+- UI:
+  - Right panel when nothing is selected: render a new `AggregatePostureBadge` component above (or replacing) the "Select a WAF" placeholder.
+  - Show: overall verdict + score, per-WebACL mini-cards (score pills), top 3 consolidated findings, top 3 fleet-level findings.
+  - Clicking a per-WebACL mini-card selects that WAF (sets `selectedWAFId`), revealing the existing single-WAF PostureScoreBadge.
+
+- Tests:
+  - `src/__tests__/postureScorerFleet.test.ts` — build a 3-WebACL fixture with known per-WebACL scores, assert the aggregate score is correct.
+  - Assert fleet-level findings fire: unprotected resource, IP-rep gap, default-action drift.
+  - Assert consolidatedFindings dedupes (same finding title across 2 WebACLs surfaces once).
+
+Positioning: this is the "Smart Security Score" Apurva referenced. Not a per-resource check — a fleet health dashboard visible as soon as the user lands in WAFSim. High information density, low user action required. If the aggregate score is < 60, the user probably opens the tool to fix that; if it's > 90, they close the tab confident. Either outcome is a good consumer experience.
+
 ---
 
 ## Meta lesson
@@ -175,12 +231,15 @@ For any future claim of "N tests passing", the right question is: **which of the
 ## Files to prioritize in next session
 
 1. `src/components/TrafficSimulator.tsx` — fix wafs[0] selector
-2. `src/app/page.tsx` — state clearing + rate-based-rule banner
+2. `src/app/page.tsx` — state clearing + rate-based-rule banner + wire AggregatePostureBadge into right-panel default view
 3. `src/engines/trafficFlowEngine.ts` — accept flood state
 4. `src/components/TopologyIssuesBanner.tsx` — reduce noise or delete
-5. `src/__tests__/integration/*` — new directory, workflow tests
-6. `CHANGELOG.md` — honest rc.9 framing
-7. `docs/GAP_ANALYSIS.md` — add the integration-test-shape finding
+5. `src/engines/postureScorer.ts` — add `scoreWebACLFleet()` aggregate function + fleet-level findings
+6. `src/components/AggregatePostureBadge.tsx` — new component, overall score view
+7. `src/__tests__/integration/*` — new directory, workflow tests (multi-WAF flood, state consistency)
+8. `src/__tests__/postureScorerFleet.test.ts` — fleet-scoring tests
+9. `CHANGELOG.md` — honest rc.9 framing
+10. `docs/GAP_ANALYSIS.md` — add the integration-test-shape finding
 
 ## Commit this doc now
 
