@@ -2,6 +2,73 @@
 
 All notable changes to WAFSim are captured here.
 
+## [3.0.0-rc.7] — 2026-05-08
+
+Critical bug fix + architectural refactor for traffic-flow simulation.
+
+### Fixed
+- **Multi-attach WAF traffic-flow bug**: when one regional WebACL protected
+  multiple resources (e.g. the same WAF attached to both an ALB and an
+  API Gateway), a SQLi attack against the topology would only color
+  downstream-of-API-Gateway edges red; downstream-of-ALB stayed green even
+  though the WAF should have blocked both paths. Root cause: inline
+  `handleSimulate` in `page.tsx` used `Map<wafId, resourceId>` which
+  overwrites on each iteration, so only the last-iterated protected
+  resource saw the WAF evaluation.
+
+### Changed — architectural refactor
+- Extracted traffic-flow logic into `src/engines/trafficFlowEngine.ts`
+  (233 LOC). Clean 4-step algorithm:
+  1. Index topology (`normalChildren`, `wafExpansion` per WAF node).
+  2. Evaluate every WAF for each of its protected resources
+     independently (fixes the reported bug).
+  3. BFS reachability treating directly-blocked resources as sinks
+     (reachable themselves, don't propagate).
+  4. Derive `edgeFlow` + `blockedNodes` from reachability + direct-blocked
+     sets. Fan-in handled correctly — a node reachable via an alternate
+     unblocked path is not over-blocked by a cascading parent.
+- `page.tsx handleSimulate` reduced from ~130 lines of inline BFS to a
+  delegating call to the new engine.
+
+### Added tests
+- `src/__tests__/trafficFlowEngine.test.ts` (6 tests):
+  - Reported bug reproduction: one WAF protecting ALB + APIGW — both
+    paths block on SQLi.
+  - Benign request inverse (both paths pass).
+  - Single-WAF-single-resource baseline.
+  - Fan-out (ALB with 3 downstream backends).
+  - Fan-in (S3 reachable via unblocked path AND blocked path — must
+    not be over-blocked).
+  - Entry-node detection.
+
+Test count: **159** (up from 153 in rc.6). Build green.
+
+### Remaining enterprise-grade work for future rc
+Called out explicitly so expectations are clear:
+- ALB target groups as first-class topology element.
+- CloudFormation / CDK / Terraform plan IaC import — biggest feature.
+- Dagre auto-layout for large imported topologies.
+- AWS official icons + VPC/Subnet container grouping.
+- Enterprise-scale fixture tests.
+
+See `docs/GAP_ANALYSIS.md` for the full picture.
+
+## [3.0.0-rc.6] — 2026-05-05
+
+CHANGELOG entry omitted in rc.6 commit by accident — captured retroactively.
+
+### Fixed
+- Posture scorer was reading `statement.limit` but the canonical type is
+  `rateLimit`. The +5 "reasonable rate limit" award was silently never
+  firing on real WebACLs.
+- FloodTimelineChart `bars` array was implicitly typed as `never[]`,
+  causing cascading "Property X does not exist on never" errors in
+  strict tsc. Fixed with explicit `Bar` type.
+
+### Changed
+- tsc strict errors down to 51 (from 57 on main at v2.49) — v3 is
+  strictly better than main on type safety.
+
 ## [3.0.0-rc.5] — 2026-05-05
 
 Animation polish — rule trace cards now fade in with a staggered scanning
