@@ -29,7 +29,7 @@ describe("scoreWebACLFleet — aggregate math", () => {
           makeRule({
             name: "CRS",
             priority: 10,
-            action: "NONE",
+            action: "BLOCK" /* placeholder for managed-group rules */,
             statement: managedGroup("AWSManagedRulesCommonRuleSet") as Statement,
           }),
         ],
@@ -137,7 +137,7 @@ describe("scoreWebACLFleet — fleet-only findings", () => {
         makeRule({
           name: "IpRep",
           priority: 10,
-          action: "NONE",
+          action: "BLOCK" /* placeholder for managed-group rules */,
           statement: managedGroup("AWSManagedRulesAmazonIpReputationList") as Statement,
         }),
       ],

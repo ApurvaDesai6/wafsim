@@ -353,7 +353,7 @@ export function ExceptionGeneratorPanel() {
     return parseWafLog(rawLog);
   }, [rawLog]);
 
-  const parsedLog: ParsedWafLog | null = parseResult.ok ? parseResult.log : null;
+  const parsedLog: ParsedWafLog | null = parseResult.ok ? (parseResult.log ?? null) : null;
 
   // Auto-recommend strategy + scope when a valid log is parsed
   useEffect(() => {
@@ -487,7 +487,7 @@ export function ExceptionGeneratorPanel() {
         scope,
         triggerUri: parsedLog.request.uri,
         triggerMethod: parsedLog.request.method,
-        terminatingRuleId: parsedLog.terminatingRuleId,
+        terminatingRuleId: parsedLog.terminatingRuleId ?? null,
         ruleJson: JSON.stringify(generated.rule),
         inserted: true,
         verificationPassed: verification?.allPassed ?? null,

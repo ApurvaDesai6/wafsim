@@ -55,14 +55,14 @@ export async function decodeShareableState(encoded: string): Promise<ShareableSt
 
     let json: string;
     if (prefix === "z:" && typeof DecompressionStream !== "undefined") {
-      const stream = new Response(bytes).body!.pipeThrough(new DecompressionStream("gzip"));
+      const stream = new Response(new Blob([new Uint8Array(bytes)])).body!.pipeThrough(new DecompressionStream("gzip"));
       json = await new Response(stream).text();
     } else if (prefix === "p:") {
       json = new TextDecoder().decode(bytes);
     } else {
       // Legacy or unknown prefix — try both
       try {
-        const stream = new Response(bytes).body!.pipeThrough(new DecompressionStream("gzip"));
+        const stream = new Response(new Blob([new Uint8Array(bytes)])).body!.pipeThrough(new DecompressionStream("gzip"));
         json = await new Response(stream).text();
       } catch {
         json = new TextDecoder().decode(bytes);

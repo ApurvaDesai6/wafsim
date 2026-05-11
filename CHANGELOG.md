@@ -2,6 +2,53 @@
 
 All notable changes to WAFSim are captured here.
 
+## [3.0.0] — 2026-05-11
+
+**v3 promotion to main.** Summary of what shipped across the v3 development cycle (rc.1 through rc.9.5) before promotion.
+
+### Architecture & engine
+- Extracted traffic-flow simulation into `src/engines/trafficFlowEngine.ts` with proper multi-attach handling (same WebACL protecting multiple resources was previously under-coloring downstream edges).
+- Rate-based rule flood simulation with a timeline chart + override hook that feeds results into topology coloring.
+- 14 statement types with COUNT vs terminating semantics, label propagation across rules.
+- All 14 AWS Managed Rule Groups with per-sub-rule simulation criteria + accurate label namespaces.
+- Posture scoring engine (5 dimensions × 20 points = 100) with per-dimension actionable findings.
+
+### False-positive exception generator
+- 5-step wizard (Paste → Review → Configure → Preview → Verify & Apply).
+- 4 strategies: label-match (default, emits BLOCK+NOT for default-ALLOW WebACLs per AWS WAF Developer Guide canonical pattern), managed-group-exclusion, custom-allow-bypass, scope-down-statement.
+- One-click prerequisite fixer (flips managed groups to COUNT mode when required).
+- Rule context in Review shows what the terminating rule does by looking it up in the managed rule groups catalog.
+- Automatic verification before apply: runs original blocked request + canned attack variant through the WAF before and after insertion, reports side-by-side. Insert button disabled unless both verify correctly.
+- Multi-format export: AWS JSON, CloudFormation YAML, Terraform HCL, AWS CLI sequence.
+- Persistent history tab with audit trail.
+
+### Workspace UX
+- Starting templates on empty canvas: ALB+EC2, CF+S3, APIGW+Lambda, multi-tier full stack, blank.
+- Shareable state URLs (gzip + base64, ~2KB per typical workspace).
+- Welcome overlay with template picker on fresh workspaces.
+- Right-panel posture score when a WAF is selected; minimal "click a WAF" hint otherwise.
+
+### Quality
+- 210 tests across unit + integration + E2E layers.
+- Workflow-level integration tests that exercise the full topology → simulate → export → verify path (these catch bugs that unit tests cannot).
+- TypeScript strict mode mostly clean; 51 pre-existing errors in `statementEvaluator`, `NestedStatementEditor`, `importEngine`, `TopologyCanvas` flagged as tech debt in the handoff note.
+
+### Removed from earlier drafts
+- Always-on `TopologyIssuesBanner` — was net-negative noise, removed from UI. Engine kept for future opt-in integration.
+- Aggregate fleet posture badge — showed non-actionable metrics, removed. Engine function stays for future re-integration.
+
+### Correctness
+- Label-match exception generator emits BLOCK+NOT for default-ALLOW WebACLs (self-contained, no downstream rule required to catch attacks) and ALLOW+AND for default-BLOCK WebACLs. Earlier versions emitted ALLOW+AND unconditionally which was unsafe for default-ALLOW because attacks fell through to default ALLOW.
+
+### Deferred to post-v3
+- Import existing WebACL from CloudFormation / Terraform (JSON import works today).
+- Interactive multi-request verification in the Verify step.
+- Before/after rule diff in the Preview step.
+- AMR label namespace casing lookup table for derivation fallback.
+- Visual identity pass distinct from the generic Tailwind/shadcn aesthetic.
+
+---
+
 ## [3.0.0-rc.9] — 2026-05-08
 
 **Three serious issues reported during Vercel testing of rc.8, all fixed, plus

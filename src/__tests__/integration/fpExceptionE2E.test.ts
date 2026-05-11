@@ -69,7 +69,7 @@ function buildQWAFGuideScenario(defaultAction: "ALLOW" | "BLOCK" = "ALLOW"): Web
         name: "AWS-AWSManagedRulesCommonRuleSet",
         priority: 10,
         overrideAction: "COUNT", // the documented prerequisite
-        action: "NONE",
+        action: "BLOCK" /* placeholder for managed-group rules */,
         statement: {
           type: "ManagedRuleGroupStatement",
           vendorName: "AWS",
@@ -310,7 +310,7 @@ describe("FP exception E2E — insertion integrity", () => {
           name: "AWS-AWSManagedRulesCommonRuleSet",
           priority: 10,
           overrideAction: "COUNT",
-          action: "NONE",
+          action: "BLOCK" /* placeholder for managed-group rules */,
           statement: {
             type: "ManagedRuleGroupStatement",
             vendorName: "AWS",

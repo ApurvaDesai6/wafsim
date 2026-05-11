@@ -146,7 +146,7 @@ describe("exceptionExporters", () => {
     const managedRule = makeRule({
       name: "CRS",
       priority: 10,
-      action: "NONE",
+      action: "BLOCK" /* placeholder for managed-group rules */,
       statement: {
         type: "ManagedRuleGroupStatement",
         vendorName: "AWS",

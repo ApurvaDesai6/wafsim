@@ -28,7 +28,7 @@ export interface FPExceptionRecord {
   timestamp: number;              // ms since epoch
   wafId: string;
   wafName: string;
-  strategy: "LABEL_MATCH_EXCEPTION" | "MANAGED_GROUP_EXCLUSION" | "CUSTOM_ALLOW_BYPASS";
+  strategy: "LABEL_MATCH_EXCEPTION" | "MANAGED_GROUP_EXCLUSION" | "CUSTOM_ALLOW_BYPASS" | "SCOPE_DOWN_STATEMENT";
   scope: "EXACT" | "SAME_PATH" | "SAME_ENDPOINT";
   triggerUri: string;             // URI from the log that triggered this
   triggerMethod: string;

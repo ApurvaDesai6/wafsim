@@ -39,7 +39,7 @@ function webACLWithManagedGroup(groupName: string, scopeDown?: Statement): WebAC
         name: groupName, // rule is named after the managed group
         priority: 10,
         overrideAction: "NONE",
-        action: "NONE",
+        action: "BLOCK" /* placeholder for managed-group rules */,
         statement: {
           type: "ManagedRuleGroupStatement",
           vendorName: "AWS",

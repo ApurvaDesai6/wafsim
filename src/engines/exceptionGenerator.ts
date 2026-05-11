@@ -268,7 +268,6 @@ function buildLabelMatchException(
       rule,
       explanation: buildLabelExplanation(label, scope, log),
       suggestedPriority,
-      strategy: "LABEL_MATCH_EXCEPTION",
       caveats,
     },
   };
@@ -353,7 +352,6 @@ function buildManagedGroupExclusion(
       },
       explanation,
       suggestedPriority: targetRule.priority,
-      strategy: "MANAGED_GROUP_EXCLUSION",
       caveats,
     },
   };
@@ -426,7 +424,6 @@ function buildCustomAllowBypass(
         ipAllowlistArn ? " AND the IP is in the allowlist" : ""
       }. This rule runs before any managed rule group, so matching traffic bypasses all downstream rules entirely.`,
       suggestedPriority,
-      strategy: "CUSTOM_ALLOW_BYPASS",
       caveats,
     },
   };

@@ -104,15 +104,15 @@ function buildApurvaScenario() {
   //   WAF_ALB → ALB
   //   WAF_APIGW → APIGW
   const nodes: AWSResourceNode[] = [
-    { id: "internet", type: "Internet", label: "Internet", x: 0, y: 0 },
-    { id: "cf", type: "CloudFront", label: "CF", x: 200, y: 0 },
-    { id: "waf-cf-node", type: "WAF", label: "WAF_CF", wafId: "waf-cf", x: 200, y: 100 },
-    { id: "alb", type: "ALB", label: "ALB", x: 400, y: -50 },
-    { id: "waf-alb-node", type: "WAF", label: "WAF_ALB", wafId: "waf-alb", x: 400, y: 50 },
-    { id: "ec2", type: "EC2", label: "EC2", x: 500, y: -50 },
-    { id: "apigw", type: "APIGateway", label: "APIGW", x: 400, y: 150 },
-    { id: "waf-apigw-node", type: "WAF", label: "WAF_APIGW", wafId: "waf-apigw", x: 400, y: 250 },
-    { id: "lambda", type: "Lambda", label: "Lambda", x: 500, y: 150 },
+    { id: "internet", type: "INTERNET", label: "Internet", icon: "", wafAttachable: false, position: { x: 0, y: 0 } },
+    { id: "cf", type: "CLOUDFRONT", label: "CF", icon: "", wafAttachable: false, position: { x: 200, y: 0 } },
+    { id: "waf-cf-node", type: "WAF", label: "WAF_CF", icon: "", wafAttachable: false, wafId: "waf-cf", position: { x: 200, y: 100 } },
+    { id: "alb", type: "ALB", label: "ALB", icon: "", wafAttachable: false, position: { x: 400, y: -50 } },
+    { id: "waf-alb-node", type: "WAF", label: "WAF_ALB", icon: "", wafAttachable: false, wafId: "waf-alb", position: { x: 400, y: 50 } },
+    { id: "ec2", type: "EC2", label: "EC2", icon: "", wafAttachable: false, position: { x: 500, y: -50 } },
+    { id: "apigw", type: "API_GATEWAY", label: "APIGW", icon: "", wafAttachable: false, position: { x: 400, y: 150 } },
+    { id: "waf-apigw-node", type: "WAF", label: "WAF_APIGW", icon: "", wafAttachable: false, wafId: "waf-apigw", position: { x: 400, y: 250 } },
+    { id: "lambda", type: "LAMBDA", label: "Lambda", icon: "", wafAttachable: false, position: { x: 500, y: 150 } },
   ];
 
   const edges: TopologyEdge[] = [

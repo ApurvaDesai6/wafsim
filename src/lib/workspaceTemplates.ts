@@ -60,6 +60,7 @@ const TEMPLATE_CLOUDFRONT_S3: WorkspaceTemplate = {
       name: "Edge-WAF",
       scope: "CLOUDFRONT",
       defaultAction: "ALLOW",
+      capacity: 1500,
       visibilityConfig: viz("EdgeWAF"),
       rules: [
         {
@@ -72,7 +73,7 @@ const TEMPLATE_CLOUDFRONT_S3: WorkspaceTemplate = {
             name: "AWSManagedRulesCommonRuleSet",
             excludedRules: [],
           } as never,
-          action: "NONE",
+          action: "BLOCK",
           visibilityConfig: viz("CRS"),
         },
       ],
@@ -107,6 +108,7 @@ const TEMPLATE_ALB_EC2: WorkspaceTemplate = {
       name: "ALB-WAF",
       scope: "REGIONAL",
       defaultAction: "ALLOW",
+      capacity: 1500,
       visibilityConfig: viz("ALBWAF"),
       rules: [
         {
@@ -119,7 +121,7 @@ const TEMPLATE_ALB_EC2: WorkspaceTemplate = {
             name: "AWSManagedRulesCommonRuleSet",
             excludedRules: [],
           } as never,
-          action: "NONE",
+          action: "BLOCK",
           visibilityConfig: viz("CRS"),
         },
         {
@@ -132,7 +134,7 @@ const TEMPLATE_ALB_EC2: WorkspaceTemplate = {
             name: "AWSManagedRulesKnownBadInputsRuleSet",
             excludedRules: [],
           } as never,
-          action: "NONE",
+          action: "BLOCK",
           visibilityConfig: viz("KBI"),
         },
       ],
@@ -167,6 +169,7 @@ const TEMPLATE_APIGW_LAMBDA: WorkspaceTemplate = {
       name: "APIGW-WAF",
       scope: "REGIONAL",
       defaultAction: "ALLOW",
+      capacity: 1500,
       visibilityConfig: viz("APIGWWAF"),
       rules: [
         {
@@ -191,7 +194,7 @@ const TEMPLATE_APIGW_LAMBDA: WorkspaceTemplate = {
             name: "AWSManagedRulesCommonRuleSet",
             excludedRules: [],
           } as never,
-          action: "NONE",
+          action: "BLOCK",
           visibilityConfig: viz("CRS"),
         },
       ],
@@ -236,6 +239,7 @@ const TEMPLATE_MULTI_TIER: WorkspaceTemplate = {
       name: "EdgeWAF",
       scope: "CLOUDFRONT",
       defaultAction: "ALLOW",
+      capacity: 1500,
       visibilityConfig: viz("EdgeWAF"),
       rules: [
         {
@@ -260,7 +264,7 @@ const TEMPLATE_MULTI_TIER: WorkspaceTemplate = {
             name: "AWSManagedRulesAmazonIpReputationList",
             excludedRules: [],
           } as never,
-          action: "NONE",
+          action: "BLOCK",
           visibilityConfig: viz("IPRep"),
         },
       ],
@@ -270,6 +274,7 @@ const TEMPLATE_MULTI_TIER: WorkspaceTemplate = {
       name: "ALB-WAF",
       scope: "REGIONAL",
       defaultAction: "ALLOW",
+      capacity: 1500,
       visibilityConfig: viz("ALBWAF"),
       rules: [
         {
@@ -282,7 +287,7 @@ const TEMPLATE_MULTI_TIER: WorkspaceTemplate = {
             name: "AWSManagedRulesCommonRuleSet",
             excludedRules: [],
           } as never,
-          action: "NONE",
+          action: "BLOCK",
           visibilityConfig: viz("CRS"),
         },
       ],
@@ -292,6 +297,7 @@ const TEMPLATE_MULTI_TIER: WorkspaceTemplate = {
       name: "APIGW-WAF",
       scope: "REGIONAL",
       defaultAction: "ALLOW",
+      capacity: 1500,
       visibilityConfig: viz("APIGWWAF"),
       rules: [
         {

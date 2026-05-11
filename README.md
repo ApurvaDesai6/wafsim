@@ -14,12 +14,23 @@ WAFSim lets you configure AWS WAF rules in a visual environment and test them ag
 - All 14 WAF statement types (ByteMatch, GeoMatch, SQLi, XSS, RateBased, IPSet, Regex, Size, Label, And/Or/Not, ManagedRuleGroup, RuleGroupReference)
 - All 14 AWS Managed Rule Groups with per-rule simulation criteria
 - 15 WAF text transformations (URL_DECODE, LOWERCASE, HTML_ENTITY_DECODE, BASE64_DECODE, COMPRESS_WHITE_SPACE, REMOVE_NULLS, and more)
-- Rate-based rule evaluation with configurable windows (1 / 2 / 5 / 10 min)
+- Rate-based rule evaluation with configurable windows (1 / 2 / 5 / 10 min) and timeline-based flood simulation
 - WCU calculation per rule and WebACL total, against the 1,500 / 5,000 WCU AWS tier thresholds
 - Label propagation across rules — rules later in priority order can match labels applied by earlier rules
 - COUNT vs terminating action semantics (COUNT does not terminate; ALLOW / BLOCK / CAPTCHA / CHALLENGE all terminate)
-- Export to AWS JSON (compatible with `aws wafv2 create-web-acl`), Terraform HCL (`aws_wafv2_web_acl` resource), and a complete CLI command sequence
-- Import an existing WebACL JSON to populate the visual builder
+
+Beyond core rule evaluation, v3 adds:
+
+- **Starting templates** — 5 scaffolded scenarios (ALB+EC2, CF+S3, APIGW+Lambda, full multi-tier stack, blank)
+- **Shareable state URLs** — encode your workspace into a URL for sharing with teammates
+- **False-positive exception generator** — 5-step wizard: paste a blocked-request log, pick strategy + scope, preview the generated rule, verify against attack variants, apply to the WebACL
+  - 4 strategies: label-match (default), managed-group-exclusion, custom-allow-bypass, scope-down-statement
+  - One-click prerequisite fixer: sets the managed group to COUNT mode when required
+  - Multi-format export: AWS JSON, CloudFormation YAML, Terraform HCL, AWS CLI one-liner template
+  - Persistent history with audit trail (timestamp, strategy, scope, trigger URI, verification result)
+- **Posture scoring** — per-WebACL security score across 5 dimensions (Coverage, Defense, Rate Limiting, Visibility, Hygiene) with actionable findings
+- **Export to deployable IaC** — AWS JSON (`aws wafv2 create-web-acl`), Terraform HCL (`aws_wafv2_web_acl` resource), full CLI command sequence
+- **Import** — paste an existing WebACL JSON to populate the visual builder
 
 ---
 

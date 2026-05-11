@@ -1,6 +1,6 @@
 {
   "name": "nextjs_tailwind_shadcn_ts",
-  "version": "3.0.0-rc.9.5",
+  "version": "3.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
@@ -98,5 +98,27 @@
     "tw-animate-css": "^1.3.5",
     "typescript": "^5",
     "vitest": "^4.1.5"
-  }
+  },
+  "description": "Visual AWS WAF rule simulator. Build, test, and tune WebACL configurations in the browser — no AWS account required.",
+  "keywords": [
+    "aws",
+    "waf",
+    "wafv2",
+    "webacl",
+    "simulator",
+    "security",
+    "firewall",
+    "visual-editor",
+    "false-positive",
+    "rule-testing"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ApurvaDesai6/wafsim.git"
+  },
+  "homepage": "https://wafsim.apurvad.xyz",
+  "bugs": {
+    "url": "https://github.com/ApurvaDesai6/wafsim/issues"
+  },
+  "license": "MIT"
 }
