@@ -9,7 +9,10 @@ import { EvaluationTrace } from "@/components/EvaluationTrace";
 import { RuleBuilder } from "@/components/RuleBuilder";
 import { ResourceManager } from "@/components/ResourceManager";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { runAllTests } from "@/engines/testSuite";
+import { PostureScoreBadge } from "@/components/PostureScoreBadge";
+import { ExceptionGeneratorPanel } from "@/components/ExceptionGeneratorPanel";
+import { WelcomeOverlay } from "@/components/WelcomeOverlay";
+import { encodeShareableState, decodeShareableState, buildShareUrl, extractShareState } from "@/lib/shareState";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -18,13 +21,14 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   Shield, Play, Download, Upload, Trash2, FileJson, Code, Copy, Check,
-  Settings, X, List, Zap, ChevronDown, ChevronUp, Link,
+  Settings, X, List, Zap, ChevronDown, ChevronUp, Link, Share2,
 } from "lucide-react";
 import { evaluateWebACL } from "@/engines/wafEngine";
+import { simulateTrafficFlow } from "@/engines/trafficFlowEngine";
 import { exportAsWebACLJson, exportAsTerraformHCL, generateCLICommands } from "@/engines/exportEngine";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
-import { Rule, HttpRequest, EvaluationResult } from "@/lib/types";
+import { Rule, HttpRequest, EvaluationResult, FloodSimulationResult } from "@/lib/types";
 
 interface SampledRequest {
   timestamp: string;
@@ -53,6 +57,8 @@ export default function WAFSimPage() {
   const [showRuleBuilder, setShowRuleBuilder] = useState(false);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
   const [ruleBuilderMode, setRuleBuilderMode] = useState<"create" | "edit">("create");
+  // rc.9.3: welcome overlay (shown on first load when workspace isn't meaningful yet)
+  const [showWelcome, setShowWelcome] = useState(false);
   const [editingRule, setEditingRule] = useState<Rule | null>(null);
   const [bottomTab, setBottomTab] = useState<string | null>(null);
   const [bottomHeight, setBottomHeight] = useState(260);
@@ -60,8 +66,6 @@ export default function WAFSimPage() {
   const [isAnimating, setIsAnimating] = useState(false);
   const [wafResults, setWafResults] = useState<Map<string, string>>(new Map());
   const [trafficEdges, setTrafficEdges] = useState<Map<string, "passed" | "blocked">>(new Map());
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [testResults, setTestResults] = useState<any>(null);
 
   // v2.33: Load shared config from URL hash on mount
   useEffect(() => {
@@ -75,6 +79,52 @@ export default function WAFSimPage() {
       }
     } catch { /* ignore invalid hash */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // rc.9.3: Load gzip-compressed shareable state from ?state= URL param
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const encoded = url.searchParams.get("state");
+    if (!encoded) {
+      // No shared state — check if workspace is meaningful enough to hide welcome
+      const s = useWAFSimStore.getState();
+      const meaningful = s.wafs.length > 0 || s.nodes.length > 2 || s.edges.length > 1;
+      if (!meaningful) setShowWelcome(true);
+      return;
+    }
+    decodeShareableState(encoded).then((state) => {
+      if (state) {
+        importState(JSON.stringify(state));
+        url.searchParams.delete("state");
+        window.history.replaceState(null, "", url.toString());
+        toast.success("Loaded shared workspace");
+      } else {
+        toast.error("Shared URL was invalid or from an incompatible version");
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // rc.9.3: Share current workspace as a URL
+  const handleShareUrl = useCallback(async () => {
+    try {
+      const s = useWAFSimStore.getState();
+      const encoded = await encodeShareableState({
+        nodes: s.nodes,
+        edges: s.edges,
+        wafs: s.wafs,
+        ipSets: s.ipSets,
+        regexPatternSets: s.regexPatternSets,
+      });
+      const url = buildShareUrl(window.location.href.split("?")[0].split("#")[0], encoded);
+      await navigator.clipboard.writeText(url);
+      toast.success("Share URL copied to clipboard", {
+        description: `${Math.round(encoded.length / 1024)} KB encoded · send this link to share your workspace`,
+      });
+    } catch (err) {
+      toast.error("Could not generate share URL");
+      console.error(err);
+    }
   }, []);
 
   // Only show WAF config when a WAF is explicitly selected (not fallback)
@@ -132,135 +182,106 @@ export default function WAFSimPage() {
     if (wafs.length === 0) { toast.error("No WAF configured"); return; }
     setIsSimulating(true);
     setIsAnimating(true);
+    // rc.9: clear stale topology coloring from any previous simulation run
+    // (single-shot OR flood). Without this, a user who ran Run Flood and
+    // then Run Simulation could see leftover red edges alongside a new
+    // ALLOW evaluation — the 'RED Allow with green path' state.
+    setTrafficEdges(new Map());
+    setWafResults(new Map());
 
     setTimeout(() => {
-      const pathResults: Array<{ wafName: string; wafId: string; result: EvaluationResult }> = [];
+      // v3.1.0: delegate traffic-flow simulation to the testable engine.
+      // Previous inline implementation had a bug where one WAF protecting
+      // multiple resources (e.g. ALB + APIGW) only propagated block state
+      // to the last-iterated resource (Map<wafId, resourceId> overwrite).
+      const flow = simulateTrafficFlow({
+        nodes,
+        edges,
+        wafs,
+        ipSets,
+        regexPatternSets,
+        request: currentRequest,
+      });
 
-      // Build a map: wafId -> resource node it protects
-      const wafToResource = new Map<string, string>();
-      for (const edge of edges) {
-        if (!edge.wafId) continue;
-        const srcNode = nodes.find(n => n.id === edge.source);
-        if (srcNode?.type === "WAF") {
-          wafToResource.set(edge.wafId, edge.target);
-        }
+      // Adapt engine output to the UI's pathResults / sampled-request shape
+      const pathResultsForUi = flow.pathResults.map((p) => ({
+        wafName: p.wafName,
+        wafId: p.wafId,
+        result: p.result,
+      }));
+
+      if (flow.displayResult) {
+        setEvaluationResultWithWAF(flow.displayResult.result, flow.displayResult.wafId);
       }
 
-      // Build adjacency for traffic edges only (no WAF edges)
-      const trafficChildren = new Map<string, string[]>();
-      for (const edge of edges) {
-        if (edge.wafId) continue;
-        const srcNode = nodes.find(n => n.id === edge.source);
-        if (srcNode?.type === "WAF") continue;
-        if (!trafficChildren.has(edge.source)) trafficChildren.set(edge.source, []);
-        trafficChildren.get(edge.source)!.push(edge.target);
-      }
-
-      // Find Internet/entry nodes (nodes with no incoming traffic edges)
-      const hasIncoming = new Set<string>();
-      for (const edge of edges) {
-        if (edge.wafId) continue;
-        const srcNode = nodes.find(n => n.id === edge.source);
-        if (srcNode?.type === "WAF") continue;
-        hasIncoming.add(edge.target);
-      }
-      const entryNodes = nodes.filter(n => n.type !== "WAF" && !hasIncoming.has(n.id)).map(n => n.id);
-
-      // BFS from entry nodes, evaluating WAFs as we encounter protected resources
-      const blockedNodes = new Set<string>();
-      const reachableNodes = new Set<string>();
-      const queue = [...entryNodes];
-      entryNodes.forEach(n => reachableNodes.add(n));
-
-      // Find which WAF protects which node
-      const nodeToWaf = new Map<string, string>(); // resourceNodeId -> wafId
-      for (const [wafId, resourceId] of wafToResource) {
-        nodeToWaf.set(resourceId, wafId);
-      }
-
-      while (queue.length > 0) {
-        const nodeId = queue.shift()!;
-        if (blockedNodes.has(nodeId)) continue;
-
-        // Check if this node has a WAF protecting it
-        const protectingWafId = nodeToWaf.get(nodeId);
-        if (protectingWafId) {
-          const waf = wafs.find(w => w.id === protectingWafId);
-          if (waf) {
-            const result = evaluateWebACL(currentRequest, waf, { ipSets, regexPatternSets });
-            pathResults.push({ wafName: waf.name, wafId: waf.id, result });
-
-            if (result.finalAction === "BLOCK" || result.finalAction === "CAPTCHA" || result.finalAction === "CHALLENGE") {
-              // Block this node and all downstream
-              blockedNodes.add(nodeId);
-              const downstreamQueue = [nodeId];
-              while (downstreamQueue.length > 0) {
-                const dn = downstreamQueue.shift()!;
-                for (const child of trafficChildren.get(dn) || []) {
-                  if (!blockedNodes.has(child)) {
-                    blockedNodes.add(child);
-                    downstreamQueue.push(child);
-                  }
-                }
-              }
-              continue; // Don't traverse children normally
-            }
-          }
-        }
-
-        // Node is reachable — traverse children
-        for (const child of trafficChildren.get(nodeId) || []) {
-          if (!reachableNodes.has(child) && !blockedNodes.has(child)) {
-            reachableNodes.add(child);
-            queue.push(child);
-          }
-        }
-      }
-
-      // Set evaluation result from the first blocking WAF, or the last evaluated
-      const blockingResult = pathResults.find(pr => pr.result.finalAction === "BLOCK" || pr.result.finalAction === "CAPTCHA" || pr.result.finalAction === "CHALLENGE");
-      const displayResult = blockingResult || pathResults[pathResults.length - 1];
-      if (displayResult) {
-        setEvaluationResultWithWAF(displayResult.result, displayResult.wafId);
-      }
-
-      // Per-WAF results for edge coloring
-      const resultsMap = new Map<string, string>();
-      pathResults.forEach(pr => resultsMap.set(pr.wafId, pr.result.finalAction));
-      setWafResults(resultsMap);
-
-      // Color ALL traffic edges based on blocked/reachable status
-      // Rule: edges INTO a blocked node = green (traffic arrived)
-      //        edges OUT OF a blocked node = red (traffic stopped here)
-      const flowMap = new Map<string, "passed" | "blocked">();
-      for (const edge of edges) {
-        if (edge.wafId) continue;
-        const srcNode = nodes.find(n => n.id === edge.source);
-        if (srcNode?.type === "WAF") continue;
-
-        if (blockedNodes.has(edge.source)) {
-          // Source is blocked — no traffic flows out of this node
-          flowMap.set(edge.id, "blocked");
-        } else {
-          // Source is not blocked — traffic flows through this edge
-          flowMap.set(edge.id, "passed");
-        }
-      }
-      setTrafficEdges(flowMap);
+      setWafResults(flow.wafResults);
+      setTrafficEdges(flow.edgeFlow);
       setIsSimulating(false);
 
       setSampledRequests(prev => [{
         timestamp: new Date().toISOString(),
         request: currentRequest,
-        result: displayResult?.result || pathResults[0]?.result,
-        wafName: displayResult?.wafName || "",
-        wafId: displayResult?.wafId || "",
-        pathResults,
+        result: flow.displayResult?.result || flow.pathResults[0]?.result,
+        wafName: flow.displayResult?.wafName || "",
+        wafId: flow.displayResult?.wafId || "",
+        pathResults: pathResultsForUi,
       }, ...prev].slice(0, 100));
 
       if (!bottomTab) setBottomTab("results");
     }, 600);
-  }, [wafs, currentRequest, ipSets, regexPatternSets, nodes, edges, bottomTab]);
+  }, [wafs, currentRequest, ipSets, regexPatternSets, nodes, edges, bottomTab, setEvaluationResultWithWAF]);
+
+  // rc.9: Flood outcome feeds into topology coloring. Previously Run Flood
+  // only updated the bottom-panel timeline; the canvas stayed stale (or
+  // green) even after rate-limit tripped. This hook runs topology flow
+  // with the flood's final WAF outcome as an override so edges reflect
+  // reality.
+  const handleFloodComplete = useCallback((floodTargetWafId: string, floodResult: FloodSimulationResult) => {
+    // rc.9: clear previous topology coloring before applying flood outcome
+    // so there's no moment where state from a prior sim is visible.
+    setTrafficEdges(new Map());
+    setWafResults(new Map());
+
+    const rateTripped = floodResult.triggersAtSeconds !== null;
+    const overrideAction = rateTripped ? "BLOCK" : "ALLOW";
+    const reason = rateTripped
+      ? `Rate limit tripped at ${floodResult.triggersAtSeconds}s (after ${floodResult.triggerRequestCount} requests)`
+      : `Flood completed ${floodResult.totalRequests} requests; rate limit not reached`;
+
+    const overrides = new Map<string, { action: string; reason: string }>();
+    overrides.set(floodTargetWafId, { action: overrideAction, reason });
+
+    // Reuse a legitimate baseline request — flood result already encodes
+    // whether the rate rule tripped; we don't need to re-evaluate rules
+    // on this request. The override takes precedence.
+    const baseRequest: HttpRequest = {
+      protocol: "HTTP/1.1",
+      method: "GET",
+      uri: "/flood-baseline",
+      queryParams: {},
+      headers: [],
+      body: "",
+      bodyEncoding: "none",
+      contentType: "application/json",
+      sourceIP: "192.168.1.100",
+      country: "US",
+    };
+
+    const flow = simulateTrafficFlow({
+      nodes, edges, wafs,
+      ipSets, regexPatternSets,
+      request: baseRequest,
+      wafOutcomeOverrides: overrides,
+    });
+
+    // Clear any stale evaluation result so the trace panel doesn't mislead.
+    // The flood's visual is the bottom-panel timeline chart.
+    setWafResults(flow.wafResults);
+    setTrafficEdges(flow.edgeFlow);
+    if (flow.displayResult) {
+      setEvaluationResultWithWAF(flow.displayResult.result, flow.displayResult.wafId);
+    }
+  }, [nodes, edges, wafs, ipSets, regexPatternSets, setEvaluationResultWithWAF]);
 
   const handleNodeClick = useCallback((nodeId: string) => selectNode(nodeId), [selectNode]);
   const handleEdgeClick = useCallback((edgeId: string) => {
@@ -317,7 +338,8 @@ export default function WAFSimPage() {
   const canAttach = selectedNode?.wafAttachable && !nodeHasWAF;
 
   return (
-    <div className="h-screen flex flex-col bg-gray-950 text-white overflow-hidden">
+    <div className="h-screen flex flex-col bg-gray-950 text-white overflow-hidden relative">
+      {showWelcome && <WelcomeOverlay onDismiss={() => setShowWelcome(false)} />}
       {/* Header */}
       <header role="banner" aria-label="WAFSim toolbar" className="h-11 border-b border-gray-800 flex items-center justify-between px-3 md:px-4 bg-gray-900 shrink-0">
         <div className="flex items-center gap-2">
@@ -334,9 +356,27 @@ export default function WAFSimPage() {
           <Button variant="ghost" size="sm" aria-label="Import WAFSim state from file" onClick={() => { const i = document.createElement("input"); i.type = "file"; i.accept = ".json"; i.onchange = (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) { const r = new FileReader(); r.onload = (e) => { try { importState(e.target?.result as string); toast.success("Imported"); } catch { toast.error("Failed"); } }; r.readAsText(f); } }; i.click(); }} className="h-7 text-xs text-gray-400 hidden sm:inline-flex"><Upload className="w-3 h-3 mr-1" />Import</Button>
           <Button variant="ghost" size="sm" aria-label="Import AWS WebACL JSON" onClick={() => { const i = document.createElement("input"); i.type = "file"; i.accept = ".json"; i.onchange = (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) { const r = new FileReader(); r.onload = (ev) => { const result = importWebACL(ev.target?.result as string); if (result.success) { toast.success(`Imported WebACL${result.warnings.length ? ` (${result.warnings.length} warnings)` : ""}`); } else { toast.error(result.errors[0] || "Import failed"); } if (result.warnings.length) result.warnings.forEach(w => console.warn("Import warning:", w)); }; r.readAsText(f); } }; i.click(); }} className="h-7 text-xs text-gray-400 hidden sm:inline-flex"><Shield className="w-3 h-3 mr-1" />Import WebACL</Button>
           <Button variant="ghost" size="sm" aria-label="Export configuration (Ctrl+E)" onClick={() => setShowExport(true)} className="h-7 text-xs text-gray-400 hidden sm:inline-flex"><Download className="w-3 h-3 mr-1" />Export</Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label="Browse templates and starter workspaces"
+            onClick={() => setShowWelcome(true)}
+            className="h-7 text-xs text-gray-400 hidden sm:inline-flex"
+          >
+            <FileJson className="w-3 h-3 mr-1" />Templates
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label="Share current workspace as a URL"
+            onClick={handleShareUrl}
+            className="h-7 text-xs text-gray-400 hidden sm:inline-flex"
+          >
+            <Share2 className="w-3 h-3 mr-1" />Share
+          </Button>
           <Button variant="ghost" size="sm" aria-label="Copy shareable link (Ctrl+S)" onClick={() => { try { const state = exportState(); const encoded = btoa(state); const url = `${window.location.origin}${window.location.pathname}#cfg=${encoded}`; navigator.clipboard.writeText(url); toast.success("Share link copied to clipboard"); } catch { toast.error("Config too large to share via URL"); } }} className="h-7 text-xs text-gray-400 hidden sm:inline-flex"><Link className="w-3 h-3 mr-1" />Share</Button>
           <Button variant="ghost" size="sm" aria-label="Reset all configuration" onClick={() => { if (confirm("Reset everything?")) { resetState(); setSampledRequests([]); toast.success("Reset"); } }} className="h-7 text-xs text-red-400"><Trash2 className="w-3 h-3" /></Button>
-          <Button variant="ghost" size="sm" aria-label="Keyboard shortcuts" onClick={() => toast.info("⌨️ Ctrl+R: Run • Ctrl+E: Export • Ctrl+S: Share")} className="h-7 text-xs text-gray-500 hidden sm:inline-flex" title="Keyboard shortcuts">?</Button>
+          <Button variant="ghost" size="sm" aria-label="Keyboard shortcuts" onClick={() => toast.info("⌨️ Ctrl/⌘+R: Run simulation · Ctrl+E: Export · Ctrl+S: Share link · Click a WAF node to see posture score + findings", { duration: 8000 })} className="h-7 text-xs text-gray-500 hidden sm:inline-flex" title="Keyboard shortcuts">?</Button>
         </div>
       </header>
 
@@ -358,24 +398,22 @@ export default function WAFSimPage() {
               trafficEdges={trafficEdges}
             />
             </ErrorBoundary>
+            {/* Topology issues banner — floats over the canvas, non-intrusive */}
           </div>
 
           {/* Bottom Panel Bar */}
           <div className="border-t border-gray-700 bg-gray-900 shrink-0">
             <div className="flex items-center h-11 px-3 gap-2">
-              {(["simulator", "results", "compare", "tests", "logs"] as const).map(tab => (
+              {(["simulator", "results", "compare", "exceptions", "logs"] as const).map(tab => (
                 <button key={tab} onClick={() => setBottomTab(bottomTab === tab ? null : tab)}
                   className={`px-3 py-1.5 text-sm font-medium rounded transition-colors ${bottomTab === tab ? "bg-gray-700 text-white" : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"}`}>
                   {tab === "simulator" && "⚡ Simulate"}
                   {tab === "results" && <>Results {evaluationResult && <Badge className={`ml-1.5 text-[10px] px-1.5 py-0 ${evaluationResult.finalAction === "BLOCK" ? "bg-red-600" : evaluationResult.finalAction === "ALLOW" ? "bg-green-600" : "bg-yellow-600"}`}>{evaluationResult.finalAction}</Badge>}</>}
                   {tab === "compare" && <>Compare {wafs.length > 1 && <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0">{wafs.length} WAFs</Badge>}</>}
-                  {tab === "tests" && "🧪 Tests"}
+                  {tab === "exceptions" && "🩹 FP Exception"}
                   {tab === "logs" && <>Sampled Requests {sampledRequests.length > 0 && <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0">{sampledRequests.length}</Badge>}</>}
                 </button>
               ))}
-              <button disabled className="px-3 py-1.5 text-sm rounded text-gray-600 cursor-not-allowed" title="Coming soon: guided false positive exception workflow">
-                False Positive Exceptions <Badge variant="outline" className="text-[9px] px-1 text-gray-600 border-gray-700 ml-1">Soon</Badge>
-              </button>
               {bottomTab && (
                 <button onClick={() => setBottomTab(null)} className="text-gray-500 hover:text-gray-300 ml-1" title="Close panel">
                   <X className="w-4 h-4" />
@@ -416,11 +454,11 @@ export default function WAFSimPage() {
                   }}
                 />
                 {bottomTab === "simulator" && (
-                  <TrafficSimulator onSimulate={handleSimulate} />
+                  <TrafficSimulator onSimulate={handleSimulate} onFloodComplete={handleFloodComplete} />
                 )}
                 {bottomTab === "results" && (
                   evaluationResult ? (
-                    <div className="h-full overflow-y-auto"><EvaluationTrace result={evaluationResult} /></div>
+                    <div className="h-full overflow-y-auto"><EvaluationTrace result={evaluationResult} webACL={wafs.find(w => w.id === lastEvaluatedWAFId) ?? null} /></div>
                   ) : (
                     <div className="h-full flex items-center justify-center text-gray-500 text-sm">Run a simulation to see results</div>
                   )
@@ -458,46 +496,8 @@ export default function WAFSimPage() {
                     )}
                   </div>
                 )}
-                {bottomTab === "tests" && (
-                  <div className="h-full overflow-auto p-3">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Button size="sm" onClick={() => {
-                        const results = runAllTests();
-                        setTestResults(results);
-                      }} className="bg-purple-600 hover:bg-purple-700">Run All Tests</Button>
-                      {testResults && (
-                        <span className="text-xs">
-                          <span className="text-green-400">{testResults.summary.passed} passed</span>
-                          {testResults.summary.failed > 0 && <span className="text-red-400 ml-2">{testResults.summary.failed} failed</span>}
-                          <span className="text-gray-500 ml-2">/ {testResults.summary.total} total</span>
-                        </span>
-                      )}
-                    </div>
-                    {testResults && (
-                      <div className="space-y-1">
-                        <div className="text-xs font-semibold text-gray-400 mb-1">Sub-Rule Tests</div>
-                        {testResults.subRuleResults.map((r: { passed: boolean; testCase: { subRuleName: string; description: string; ruleGroupName: string }; actualMatch: boolean; finalAction: string; error?: string }, i: number) => (
-                          <div key={`sub-${i}`} className={`flex items-center gap-2 text-[11px] px-2 py-1 rounded ${r.passed ? "bg-green-900/20" : "bg-red-900/20"}`}>
-                            <span>{r.passed ? "✅" : "❌"}</span>
-                            <span className="font-mono text-gray-300">{r.testCase.subRuleName}</span>
-                            <span className="text-gray-500 truncate flex-1">{r.testCase.description}</span>
-                            {!r.passed && <span className="text-red-400 shrink-0">got: {r.finalAction}</span>}
-                            {r.error && <span className="text-red-400 shrink-0">{r.error}</span>}
-                          </div>
-                        ))}
-                        <div className="text-xs font-semibold text-gray-400 mt-3 mb-1">Evaluation Order Tests</div>
-                        {testResults.orderResults.map((r: { passed: boolean; testCase: { name: string; description: string }; actualFinalAction: string; actualTerminatingRule?: string; error?: string }, i: number) => (
-                          <div key={`order-${i}`} className={`flex items-center gap-2 text-[11px] px-2 py-1 rounded ${r.passed ? "bg-green-900/20" : "bg-red-900/20"}`}>
-                            <span>{r.passed ? "✅" : "❌"}</span>
-                            <span className="font-mono text-gray-300">{r.testCase.name}</span>
-                            <span className="text-gray-500 truncate flex-1">{r.testCase.description}</span>
-                            {!r.passed && <span className="text-red-400 shrink-0">got: {r.actualFinalAction}{r.actualTerminatingRule ? ` by ${r.actualTerminatingRule}` : ""}</span>}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {!testResults && <div className="text-gray-500 text-sm">Click "Run All Tests" to validate sub-rule triggers and evaluation order</div>}
-                  </div>
+                {bottomTab === "exceptions" && (
+                  <ExceptionGeneratorPanel />
                 )}
                 {bottomTab === "logs" && (
                   <div className="h-full overflow-auto">
@@ -558,7 +558,12 @@ export default function WAFSimPage() {
             <X className="w-4 h-4" />
           </button>
           {activeWAF ? (
-            <WAFConfigPanel wafId={activeWAF.id} onEditRule={handleEditRule} onCreateRule={handleCreateRule} />
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="px-3 pt-2 pb-0">
+                <PostureScoreBadge webACL={activeWAF} />
+              </div>
+              <WAFConfigPanel wafId={activeWAF.id} onEditRule={handleEditRule} onCreateRule={handleCreateRule} />
+            </div>
           ) : selectedNode?.wafAttachable ? (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
               <Shield className="w-14 h-14 text-green-400/50 mb-4" />
@@ -571,6 +576,16 @@ export default function WAFSimPage() {
               ) : (
                 <p className="text-xs text-yellow-400">Connect a source node first</p>
               )}
+            </div>
+          ) : wafs.length > 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+              <Shield className="w-12 h-12 text-gray-700 mb-3" />
+              <p className="text-sm font-medium text-gray-300">
+                {wafs.length} WAF{wafs.length === 1 ? "" : "s"} configured
+              </p>
+              <p className="text-xs text-gray-500 mt-2 max-w-[260px] leading-relaxed">
+                Click a WAF node on the canvas to inspect its posture score, rules, and attached resources.
+              </p>
             </div>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">

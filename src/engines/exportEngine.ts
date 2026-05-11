@@ -146,11 +146,14 @@ function convertStatementToJson(statement: Statement): Record<string, unknown> {
     case "RateBasedStatement":
       return {
         RateBasedStatement: {
-          RateLimit: statement.rateLimit,
+          // AWS API field is "Limit" (not "RateLimit") per
+          // https://docs.aws.amazon.com/waf/latest/APIReference/API_RateBasedStatement.html
+          Limit: statement.rateLimit,
           EvaluationWindowSec: statement.evaluationWindowSec,
           AggregateKeyType: statement.aggregateKeyType,
           ...(statement.aggregateKeys && {
-            AggregateKeys: statement.aggregateKeys.map((key) => ({
+            // AWS API field is "CustomKeys" (not "AggregateKeys")
+            CustomKeys: statement.aggregateKeys.map((key) => ({
               ...(key.header && { Header: { Name: key.header.name } }),
               ...(key.cookie && { Cookie: { Name: key.cookie.name } }),
               ...(key.queryArgument && { QueryArgument: { Name: key.queryArgument.name } }),
@@ -470,11 +473,12 @@ export function exportAsTerraformHCL(
     lines.push(`  description = "${patternSet.description || "Created by WAFSim"}"`);
     lines.push(`  scope       = "${patternSet.scope}"`);
     lines.push("");
-    lines.push("  regular_expression {");
+    // One regular_expression block per pattern per Terraform aws_wafv2_regex_pattern_set schema
     for (const pattern of patternSet.regularExpressionList) {
+      lines.push("  regular_expression {");
       lines.push(`    regex_string = "${escapeTerraformString(pattern)}"`);
+      lines.push("  }");
     }
-    lines.push("  }");
     lines.push("}");
     lines.push("");
   }

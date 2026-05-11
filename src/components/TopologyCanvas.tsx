@@ -364,7 +364,11 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
       const thisWafResult = edge.wafId ? wafResults?.get(edge.wafId) : null;
       const showTraffic = isAnimating && !isWAFConnection;
 
-      let strokeColor = isWAFConnection ? "#dc2626" : "#4b5563";
+      // rc.9.1: default WAF-connection edge is neutral gray (same as
+      // normal traffic edges). Previously defaulted to red, which made
+      // ALLOW visually indistinguishable from idle state — Apurva's
+      // reported bug. Red is now reserved exclusively for BLOCK.
+      let strokeColor = "#4b5563"; // neutral gray
       const isSelected = selectedEdgeId === edge.id;
       const trafficStatus = !isWAFConnection ? trafficEdges?.get(edge.id) : null;
 
@@ -394,7 +398,10 @@ const TopologyCanvasInner: React.FC<TopologyCanvasInnerProps> = ({
         selected: selectedEdgeId === edge.id,
         interactionWidth: 20,
         style: {
-          strokeWidth: (thisWafResult || isEvalEdge || isSelected) ? 3 : 2,
+          // rc.9.1: bolder stroke on WAF edges with results so the color flip
+          // is visually dramatic. 4px for WAF-connection results, 3px for
+          // normal selected/evaluated, 2px idle.
+          strokeWidth: isWAFConnection && thisWafResult ? 4 : (thisWafResult || isEvalEdge || isSelected) ? 3 : 2,
           stroke: strokeColor,
           strokeDasharray: isWAFConnection && !thisWafResult && !isEvalEdge ? "6 3" : undefined,
         },

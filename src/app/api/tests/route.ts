@@ -1,47 +1,42 @@
 import { NextResponse } from "next/server";
-import { runAllTests } from "@/__tests__/engineTests";
-import { runE2ETests } from "@/__tests__/e2eTests";
+import { runAllTests } from "@/engines/testSuite";
 
+/**
+ * GET /api/tests
+ *
+ * Runs the in-app test suite (sub-rule coverage + rule ordering scenarios)
+ * and returns a structured pass/fail report. The authoritative engine-level
+ * test suite lives in src/__tests__/ and is executed via `bun run test`
+ * (vitest). This route is a lightweight live-run endpoint for the UI.
+ */
 export async function GET() {
   try {
-    console.log("Running WAFSim Test Suite...\n");
-    
-    // Run unit tests
-    console.log("--- Unit Tests ---");
-    const unitResults = runAllTests();
-    
-    // Run E2E tests
-    console.log("\n--- E2E Tests ---");
-    const e2eResults = runE2ETests();
-    
-    const allPassed = unitResults.failed === 0 && e2eResults.failed === 0;
-    
+    const results = runAllTests();
     return NextResponse.json({
-      success: allPassed,
+      success: results.summary.failed === 0,
       summary: {
-        unitTests: {
-          total: unitResults.passed + unitResults.failed,
-          passed: unitResults.passed,
-          failed: unitResults.failed,
+        overall: results.summary,
+        subRuleTests: {
+          total: results.subRuleResults.length,
+          passed: results.subRuleResults.filter((r) => r.passed).length,
+          failed: results.subRuleResults.filter((r) => !r.passed).length,
         },
-        e2eTests: {
-          total: e2eResults.passed + e2eResults.failed,
-          passed: e2eResults.passed,
-          failed: e2eResults.failed,
-        },
-        overall: {
-          total: unitResults.passed + unitResults.failed + e2eResults.passed + e2eResults.failed,
-          passed: unitResults.passed + e2eResults.passed,
-          failed: unitResults.failed + e2eResults.failed,
+        orderTests: {
+          total: results.orderResults.length,
+          passed: results.orderResults.filter((r) => r.passed).length,
+          failed: results.orderResults.filter((r) => !r.passed).length,
         },
       },
-      unitTestResults: unitResults.results,
-      e2eTestResults: e2eResults.results,
+      subRuleResults: results.subRuleResults,
+      orderResults: results.orderResults,
     });
   } catch (error) {
-    return NextResponse.json({
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    }, { status: 500 });
+    return NextResponse.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 }
+    );
   }
 }
